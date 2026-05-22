@@ -11,7 +11,6 @@ const sharedElectronExternals = [
   '@google-cloud/storage',
   '@azure/storage-blob',
   '@supabase/supabase-js',
-  'archiver',
   'node-cron',
   'winston',
   'yauzl',
