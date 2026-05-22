@@ -59,10 +59,13 @@ app.whenReady().then(async () => {
   logger.info('Application starting...')
 
   const config = loadConfig()
+
+  // Create the window FIRST so mainWindow is not null when IPC handlers / scheduler
+  // capture it in their closures (they use mainWindow?.webContents.send for events).
+  createWindow()
+
   setupIpcHandlers(mainWindow)
   initScheduler(config, mainWindow)
-
-  createWindow()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
