@@ -5,13 +5,15 @@ import {
   Settings,
   ScrollText,
   Database,
+  RotateCcw,
 } from 'lucide-react'
 
 const navItems = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/backup', icon: PlayCircle, label: 'Run Backup' },
-  { to: '/settings', icon: Settings, label: 'Settings' },
-  { to: '/logs', icon: ScrollText, label: 'Logs' },
+  { to: '/backup',    icon: PlayCircle,      label: 'Run Backup' },
+  { to: '/restore',   icon: RotateCcw,       label: 'Restore' },
+  { to: '/settings',  icon: Settings,        label: 'Settings' },
+  { to: '/logs',      icon: ScrollText,      label: 'Logs' },
 ]
 
 export function SidebarNav() {

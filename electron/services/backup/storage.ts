@@ -1,4 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
+import ws from 'ws'
 import fs from 'fs'
 import path from 'path'
 import { getLogger } from '../logger'
@@ -18,6 +19,9 @@ export async function backupStorage(
 
   const supabase = createClient(config.url, config.serviceRoleKey, {
     auth: { persistSession: false },
+    // Electron's bundled Node.js (v20) has no native WebSocket.
+    // Pass the 'ws' package so @supabase/realtime-js doesn't throw at instantiation.
+    realtime: { transport: ws as any },
   })
 
   onProgress?.('Listing storage buckets...')

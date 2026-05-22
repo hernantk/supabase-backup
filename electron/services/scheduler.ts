@@ -1,80 +1,134 @@
 import cron from 'node-cron'
 import { BrowserWindow } from 'electron'
 import { runBackup } from './backup/runner'
+import { loadConfig } from './config'
 import { getLogger } from './logger'
 import type { AppConfig, SchedulerStatus } from '../preload'
 
-let scheduledTask: cron.ScheduledTask | null = null
-let lastRun: string | null = null
-let currentCron: string = ''
+// ─── Task registry ────────────────────────────────────────────────────────────
 
-export function initScheduler(config: AppConfig, mainWindow: BrowserWindow | null): void {
-  const logger = getLogger()
-
-  if (config.schedule.enabled && config.schedule.cron) {
-    startScheduler(config, mainWindow)
-    logger.info(`Scheduler initialized with cron: ${config.schedule.cron}`)
-  }
+interface TaskEntry {
+  task: cron.ScheduledTask
+  cron: string
+  connectionName: string
+  lastRun: string | null
 }
 
-export function startScheduler(config: AppConfig, mainWindow: BrowserWindow | null): void {
+const scheduledTasks = new Map<string, TaskEntry>()
+
+// ─── Public API ───────────────────────────────────────────────────────────────
+
+/**
+ * Called once at app startup and whenever config is saved.
+ * Reconciles running tasks with the current config:
+ * - starts tasks for newly enabled connections
+ * - stops tasks for disabled / removed connections
+ * - restarts tasks whose cron expression changed
+ */
+export function syncSchedules(config: AppConfig, mainWindow: BrowserWindow | null): void {
   const logger = getLogger()
 
-  if (scheduledTask) {
-    scheduledTask.stop()
-    scheduledTask = null
-  }
-
-  if (!config.schedule.cron || !cron.validate(config.schedule.cron)) {
-    logger.error(`Invalid cron expression: ${config.schedule.cron}`)
-    return
-  }
-
-  currentCron = config.schedule.cron
-
-  scheduledTask = cron.schedule(config.schedule.cron, async () => {
-    logger.info('Scheduled backup triggered')
-    lastRun = new Date().toISOString()
-
-    try {
-      const result = await runBackup(
-        config,
-        {
-          include: config.backup.include,
-          destinations: getEnabledDestinations(config),
-          compress: config.backup.compress,
-          encrypt: config.backup.encrypt,
-        },
-        (progress) => {
-          mainWindow?.webContents.send('backup:progress', progress)
-        }
-      )
-
-      mainWindow?.webContents.send('backup:complete', result)
-    } catch (err: any) {
-      logger.error(`Scheduled backup failed: ${err.message}`)
+  // Build map of what should be active
+  const shouldBeActive = new Map<string, { cron: string; name: string }>()
+  for (const conn of config.connections) {
+    if (conn.schedule.enabled && conn.schedule.cron && cron.validate(conn.schedule.cron)) {
+      shouldBeActive.set(conn.id, { cron: conn.schedule.cron, name: conn.name })
     }
-  })
-
-  logger.info(`Scheduler started: ${config.schedule.cron}`)
-}
-
-export function stopScheduler(): void {
-  if (scheduledTask) {
-    scheduledTask.stop()
-    scheduledTask = null
   }
-  getLogger().info('Scheduler stopped')
+
+  // Stop tasks that are no longer needed
+  for (const [id, entry] of scheduledTasks) {
+    if (!shouldBeActive.has(id)) {
+      entry.task.stop()
+      scheduledTasks.delete(id)
+      logger.info(`Scheduler stopped for: ${entry.connectionName}`)
+    }
+  }
+
+  // Start or restart tasks as needed
+  for (const [id, { cron: cronExpr, name }] of shouldBeActive) {
+    const existing = scheduledTasks.get(id)
+
+    // Already running with the same expression — nothing to do
+    if (existing && existing.cron === cronExpr) continue
+
+    // Stop stale task if cron changed
+    if (existing) {
+      existing.task.stop()
+    }
+
+    const entry: TaskEntry = {
+      task: null as any,
+      cron: cronExpr,
+      connectionName: name,
+      lastRun: existing?.lastRun ?? null,
+    }
+
+    entry.task = cron.schedule(cronExpr, async () => {
+      const taskEntry = scheduledTasks.get(id)
+      if (taskEntry) taskEntry.lastRun = new Date().toISOString()
+
+      logger.info(`Scheduled backup triggered for: ${name}`)
+
+      // Re-read config so it's always up-to-date at run time
+      const latestConfig = loadConfig()
+      const latestConn = latestConfig.connections.find((c) => c.id === id)
+      if (!latestConn || !latestConn.schedule.enabled) return
+
+      try {
+        const result = await runBackup(
+          latestConfig,
+          {
+            connectionId: id,
+            include: latestConn.backup.include,
+            destinations: getEnabledDestinations(latestConfig),
+            compress: latestConn.backup.compress,
+            encrypt: latestConn.backup.encrypt,
+          },
+          (progress) => mainWindow?.webContents.send('backup:progress', progress)
+        )
+        mainWindow?.webContents.send('backup:complete', result)
+      } catch (err: any) {
+        logger.error(`Scheduled backup failed for ${name}: ${err.message}`)
+      }
+    })
+
+    scheduledTasks.set(id, entry)
+    logger.info(`Scheduler started for: ${name} (${cronExpr})`)
+  }
 }
 
+/** Called at app startup — same as syncSchedules. */
+export function initScheduler(config: AppConfig, mainWindow: BrowserWindow | null): void {
+  syncSchedules(config, mainWindow)
+  getLogger().info(`Scheduler initialized (${scheduledTasks.size} active tasks)`)
+}
+
+/** Stop all running scheduled tasks. */
+export function stopAllSchedulers(): void {
+  for (const [, entry] of scheduledTasks) {
+    entry.task.stop()
+  }
+  scheduledTasks.clear()
+  getLogger().info('All schedulers stopped')
+}
+
+/** Returns current scheduler status for all connections. */
 export function getSchedulerStatus(): SchedulerStatus {
   return {
-    running: scheduledTask !== null,
-    nextRun: scheduledTask ? getNextRun(currentCron) : null,
-    lastRun,
-    cron: currentCron,
+    activeCount: scheduledTasks.size,
+    connections: Array.from(scheduledTasks.entries()).map(([id, entry]) => ({
+      connectionId: id,
+      connectionName: entry.connectionName,
+      running: true,
+      cron: entry.cron,
+      nextRun: getNextRun(entry.cron),
+      lastRun: entry.lastRun,
+    })),
   }
 }
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function getEnabledDestinations(config: AppConfig): string[] {
   const destinations: string[] = []
@@ -87,30 +141,21 @@ function getEnabledDestinations(config: AppConfig): string[] {
 
 function getNextRun(cronExpression: string): string | null {
   try {
-    // Simple next run calculation
-    const interval = cron.validate(cronExpression)
-    if (!interval) return null
-
-    // Parse basic cron to estimate next run
-    const now = new Date()
+    if (!cron.validate(cronExpression)) return null
     const parts = cronExpression.split(' ')
+    if (parts.length < 5) return null
 
-    if (parts.length >= 5) {
-      const [minute, hour] = parts
-      const next = new Date(now)
+    const [minute, hour] = parts
+    const now = new Date()
+    const next = new Date(now)
 
-      if (hour !== '*') next.setHours(parseInt(hour))
-      if (minute !== '*') next.setMinutes(parseInt(minute))
-      next.setSeconds(0)
+    if (hour !== '*') next.setHours(parseInt(hour))
+    if (minute !== '*') next.setMinutes(parseInt(minute))
+    next.setSeconds(0)
+    next.setMilliseconds(0)
 
-      if (next <= now) {
-        next.setDate(next.getDate() + 1)
-      }
-
-      return next.toISOString()
-    }
-
-    return null
+    if (next <= now) next.setDate(next.getDate() + 1)
+    return next.toISOString()
   } catch {
     return null
   }

@@ -3,6 +3,8 @@ import { Clock, HardDrive, Trash2 } from 'lucide-react'
 
 interface BackupRecord {
   id: string
+  connectionId?: string
+  connectionName?: string
   timestamp: string
   duration: number
   size: number
@@ -42,6 +44,9 @@ export function BackupHistoryTable({ records, onDelete }: BackupHistoryTableProp
               Date
             </th>
             <th className="text-left px-4 py-3 text-xs font-medium text-surface-400 uppercase tracking-wider">
+              Connection
+            </th>
+            <th className="text-left px-4 py-3 text-xs font-medium text-surface-400 uppercase tracking-wider">
               Type
             </th>
             <th className="text-left px-4 py-3 text-xs font-medium text-surface-400 uppercase tracking-wider">
@@ -70,6 +75,9 @@ export function BackupHistoryTable({ records, onDelete }: BackupHistoryTableProp
                   <Clock size={14} className="text-surface-500" />
                   {formatDate(record.timestamp)}
                 </div>
+              </td>
+              <td className="px-4 py-3 text-sm text-surface-300">
+                {record.connectionName ?? <span className="text-surface-600">—</span>}
               </td>
               <td className="px-4 py-3">
                 <div className="flex gap-1">

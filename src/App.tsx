@@ -3,6 +3,7 @@ import { SidebarNav } from './components/SidebarNav'
 import { TitleBar } from './components/TitleBar'
 import { Dashboard } from './pages/Dashboard'
 import { RunBackup } from './pages/RunBackup'
+import { Restore } from './pages/Restore'
 import { Settings } from './pages/Settings'
 import { Logs } from './pages/Logs'
 
@@ -18,6 +19,7 @@ export default function App() {
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/backup" element={<RunBackup />} />
+              <Route path="/restore" element={<Restore />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/logs" element={<Logs />} />
             </Routes>

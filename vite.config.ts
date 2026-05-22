@@ -15,6 +15,10 @@ const sharedElectronExternals = [
   'node-cron',
   'winston',
   'yauzl',
+  // ws and its optional native addons must not be bundled
+  'ws',
+  'bufferutil',
+  'utf-8-validate',
 ]
 
 export default defineConfig({

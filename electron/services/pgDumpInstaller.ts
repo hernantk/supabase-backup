@@ -42,6 +42,7 @@ const WINDOWS_DOWNLOAD_URL =
 // Only these files are extracted from the zip (saves ~180 MB of disk space)
 const WINDOWS_REQUIRED_FILES: Array<{ from: string; to: string }> = [
   { from: 'pgsql/bin/pg_dump.exe',           to: 'pg_dump.exe' },
+  { from: 'pgsql/bin/psql.exe',              to: 'psql.exe' },
   { from: 'pgsql/bin/libpq.dll',             to: 'libpq.dll' },
   { from: 'pgsql/bin/libssl-3-x64.dll',      to: 'libssl-3-x64.dll' },
   { from: 'pgsql/bin/libcrypto-3-x64.dll',   to: 'libcrypto-3-x64.dll' },

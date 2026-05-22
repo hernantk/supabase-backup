@@ -41,6 +41,7 @@
     "react-router-dom": "^7.1.0",
     "tailwind-merge": "^2.6.0",
     "winston": "^3.17.0",
+    "ws": "^8.20.1",
     "yauzl": "^3.3.1",
     "zod": "^3.24.0"
   },
@@ -50,6 +51,7 @@
     "@types/node-cron": "^3.0.11",
     "@types/react": "^18.3.14",
     "@types/react-dom": "^18.3.3",
+    "@types/ws": "^8.18.1",
     "@types/yauzl": "^2.10.3",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",

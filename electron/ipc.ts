@@ -1,10 +1,12 @@
-import { ipcMain, BrowserWindow, dialog } from 'electron'
+import { ipcMain, BrowserWindow, dialog, shell } from 'electron'
 import { runBackup, cancelBackup } from './services/backup/runner'
+import { restoreDatabase, cancelRestore } from './services/backup/restore'
 import { loadConfig, saveConfig } from './services/config'
+import fs from 'fs'
 import { getBackupHistory, deleteBackupRecord } from './services/history'
 import { testSupabaseConnection } from './services/backup/database'
 import { testDestination } from './services/destinations/tester'
-import { getSchedulerStatus, startScheduler, stopScheduler } from './services/scheduler'
+import { syncSchedules, stopAllSchedulers, getSchedulerStatus } from './services/scheduler'
 import { queryLogs } from './services/logger'
 import {
   detectPgDump,
@@ -17,7 +19,7 @@ import {
 import type { AppConfig, BackupOptions, LogQuery } from './preload'
 
 export function setupIpcHandlers(mainWindow: BrowserWindow | null) {
-  // Backup operations
+  // ── Backup ──────────────────────────────────────────────────────────────────
   ipcMain.handle('backup:run', async (_event, options: BackupOptions) => {
     const config = loadConfig()
     return runBackup(config, options, (progress) => {
@@ -29,20 +31,53 @@ export function setupIpcHandlers(mainWindow: BrowserWindow | null) {
     return cancelBackup()
   })
 
-  // Config
+  // ── Restore ──────────────────────────────────────────────────────────────────
+  ipcMain.handle('restore:run', async (_event, connectionId: string, filePath: string) => {
+    const config = loadConfig()
+    const connection = config.connections.find((c) => c.id === connectionId)
+    if (!connection) throw new Error(`Connection not found: "${connectionId}"`)
+    return restoreDatabase(connection.supabase, filePath, (progress) => {
+      mainWindow?.webContents.send('restore:progress', progress)
+    })
+  })
+
+  ipcMain.handle('restore:cancel', async () => {
+    return cancelRestore()
+  })
+
+  // ── Shell ────────────────────────────────────────────────────────────────────
+  ipcMain.handle('shell:open-folder', async (_event, targetPath: string) => {
+    // If it's a directory, open it directly.
+    // If it's a file, open the parent folder and highlight the file.
+    try {
+      const stat = fs.statSync(targetPath)
+      if (stat.isDirectory()) {
+        await shell.openPath(targetPath)
+      } else {
+        shell.showItemInFolder(targetPath)
+      }
+    } catch {
+      // Path doesn't exist — open the string as-is and let the OS handle it
+      await shell.openPath(targetPath)
+    }
+  })
+
+  // ── Config ──────────────────────────────────────────────────────────────────
   ipcMain.handle('config:get', async () => {
     return loadConfig()
   })
 
   ipcMain.handle('config:save', async (_event, config: AppConfig) => {
-    return saveConfig(config)
+    saveConfig(config)
+    // Automatically reconcile all scheduled tasks whenever config is saved
+    syncSchedules(config, mainWindow)
   })
 
   ipcMain.handle('config:test-connection', async (_event, config) => {
     return testSupabaseConnection(config)
   })
 
-  // Backup history
+  // ── Backup history ──────────────────────────────────────────────────────────
   ipcMain.handle('backup:history', async () => {
     return getBackupHistory()
   })
@@ -51,31 +86,31 @@ export function setupIpcHandlers(mainWindow: BrowserWindow | null) {
     return deleteBackupRecord(id)
   })
 
-  // Scheduler
+  // ── Scheduler ───────────────────────────────────────────────────────────────
   ipcMain.handle('scheduler:status', async () => {
     return getSchedulerStatus()
   })
 
-  ipcMain.handle('scheduler:start', async () => {
+  ipcMain.handle('scheduler:sync', async () => {
     const config = loadConfig()
-    return startScheduler(config, mainWindow)
+    syncSchedules(config, mainWindow)
   })
 
   ipcMain.handle('scheduler:stop', async () => {
-    return stopScheduler()
+    stopAllSchedulers()
   })
 
-  // Logs
+  // ── Logs ────────────────────────────────────────────────────────────────────
   ipcMain.handle('logs:get', async (_event, options: LogQuery) => {
     return queryLogs(options)
   })
 
-  // Destinations
+  // ── Destinations ────────────────────────────────────────────────────────────
   ipcMain.handle('destination:test', async (_event, type: string, config: any) => {
     return testDestination(type, config)
   })
 
-  // Dialog
+  // ── Dialogs ─────────────────────────────────────────────────────────────────
   ipcMain.handle('dialog:browse-folder', async () => {
     const result = await dialog.showOpenDialog({
       properties: ['openDirectory', 'createDirectory'],
@@ -95,7 +130,7 @@ export function setupIpcHandlers(mainWindow: BrowserWindow | null) {
     return result.filePaths[0]
   })
 
-  // pg_dump installer
+  // ── pg_dump installer ───────────────────────────────────────────────────────
   ipcMain.handle('pgdump:detect', async () => {
     return detectPgDump()
   })
@@ -124,10 +159,8 @@ export function setupIpcHandlers(mainWindow: BrowserWindow | null) {
     })
   })
 
-  // Window controls
-  ipcMain.on('window:minimize', () => {
-    mainWindow?.minimize()
-  })
+  // ── Window controls ─────────────────────────────────────────────────────────
+  ipcMain.on('window:minimize', () => mainWindow?.minimize())
 
   ipcMain.on('window:maximize', () => {
     if (mainWindow?.isMaximized()) {
@@ -137,7 +170,5 @@ export function setupIpcHandlers(mainWindow: BrowserWindow | null) {
     }
   })
 
-  ipcMain.on('window:close', () => {
-    mainWindow?.close()
-  })
+  ipcMain.on('window:close', () => mainWindow?.close())
 }
