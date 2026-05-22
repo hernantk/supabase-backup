@@ -14,6 +14,7 @@ import {
   FolderOpenDot,
 } from 'lucide-react'
 import { ProgressBar } from '../components/ProgressBar'
+import { useBackup } from '../contexts/BackupContext'
 
 type BackupStage = 'database' | 'storage' | 'compress' | 'encrypt' | 'upload'
 
@@ -56,13 +57,13 @@ const STAGES: { key: BackupStage; label: string; icon: string }[] = [
 ]
 
 export function RunBackup() {
+  const backup = useBackup()
+
   const [config, setConfig] = useState<AppConfig | null>(null)
   const [selectedConnectionId, setSelectedConnectionId] = useState<string>('')
-  const [isRunning, setIsRunning] = useState(false)
   const [isComplete, setIsComplete] = useState(false)
   const [completedResult, setCompletedResult] = useState<any>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [progress, setProgress] = useState<BackupProgress | null>(null)
+  const [localError, setLocalError] = useState<string | null>(null)
   const [options, setOptions] = useState({
     include: ['database', 'storage'] as ('database' | 'storage')[],
     destinations: [] as string[],
@@ -72,19 +73,16 @@ export function RunBackup() {
   const [logs, setLogs] = useState<string[]>([])
   const logsRef = useRef<HTMLDivElement>(null)
 
+  // Load config once
+  useEffect(() => { loadConfig() }, [])
+
+  // Accumulate log entries from global backup progress
   useEffect(() => {
-    loadConfig()
-
-    const unsubProgress = window.electronAPI.onBackupProgress((p) => {
-      setProgress(p)
-      setLogs((prev) => {
-        const line = `[${p.stage.toUpperCase()}] ${p.message}`
-        return prev[prev.length - 1] === line ? prev : [...prev, line]
-      })
-    })
-
-    return () => { unsubProgress() }
-  }, [])
+    if (backup.progress) {
+      const line = `[${backup.progress.stage.toUpperCase()}] ${backup.progress.message}`
+      setLogs((prev) => (prev[prev.length - 1] === line ? prev : [...prev, line]))
+    }
+  }, [backup.progress])
 
   // Auto-scroll logs
   useEffect(() => {
@@ -111,7 +109,6 @@ export function RunBackup() {
     }
   }
 
-  // When selected connection changes, update option defaults
   function handleSelectConnection(id: string) {
     setSelectedConnectionId(id)
     const conn = config?.connections.find((c) => c.id === id)
@@ -136,35 +133,27 @@ export function RunBackup() {
 
   async function handleStart() {
     if (!selectedConnectionId) return
-    setIsRunning(true)
     setIsComplete(false)
     setCompletedResult(null)
-    setError(null)
-    setProgress(null)
+    setLocalError(null)
     setLogs([])
 
     try {
-      const result = await window.electronAPI.runBackup({
-        connectionId: selectedConnectionId,
-        ...options,
-      })
-      setIsRunning(false)
+      const result = await backup.startBackup(selectedConnectionId, options)
       if (result.success) {
         setCompletedResult(result)
         setIsComplete(true)
       } else {
-        setError(result.error ?? 'Backup failed')
+        setLocalError(result.error ?? 'Backup failed')
       }
     } catch (err: any) {
-      setIsRunning(false)
-      setError(err.message ?? 'Backup failed')
+      setLocalError(err.message ?? 'Backup failed')
     }
   }
 
   async function handleCancel() {
-    await window.electronAPI.cancelBackup()
-    setIsRunning(false)
-    setError('Backup cancelled by user')
+    await backup.cancelBackup()
+    setLocalError('Backup cancelled')
   }
 
   function toggleInclude(type: 'database' | 'storage') {
@@ -187,17 +176,17 @@ export function RunBackup() {
 
   function resetState() {
     setIsComplete(false)
-    setError(null)
-    setProgress(null)
+    setLocalError(null)
     setLogs([])
     setCompletedResult(null)
+    backup.clearState()
   }
 
   const selectedConnection = config?.connections.find((c) => c.id === selectedConnectionId)
-  const currentStageIndex = STAGES.findIndex((s) => s.key === progress?.stage)
+  const currentStageIndex = STAGES.findIndex((s) => s.key === backup.progress?.stage)
 
   // ── Loading screen ──────────────────────────────────────────────────────────
-  if (isRunning) {
+  if (backup.isRunning) {
     return (
       <div className="flex flex-col h-full min-h-0">
         {/* Header */}
@@ -266,11 +255,11 @@ export function RunBackup() {
             <span className="font-medium text-surface-200">
               {STAGES[currentStageIndex]?.label ?? 'Preparing...'}
             </span>
-            <span className="font-mono">{progress?.progress ?? 0}%</span>
+            <span className="font-mono">{backup.progress?.progress ?? 0}%</span>
           </div>
           <ProgressBar
-            progress={progress?.progress ?? 0}
-            label={progress?.message ?? 'Starting...'}
+            progress={backup.progress?.progress ?? 0}
+            label={backup.progress?.message ?? 'Starting...'}
             showPercentage={false}
           />
         </div>
@@ -345,7 +334,7 @@ export function RunBackup() {
   }
 
   // ── Error screen ────────────────────────────────────────────────────────────
-  if (error) {
+  if (localError) {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-6 max-w-md mx-auto text-center px-6">
         <div className="w-20 h-20 rounded-full bg-red-500/10 flex items-center justify-center">
@@ -353,7 +342,7 @@ export function RunBackup() {
         </div>
         <div>
           <h2 className="text-2xl font-bold text-surface-50 mb-2">Backup Failed</h2>
-          <p className="text-sm text-red-400/80 break-words">{error}</p>
+          <p className="text-sm text-red-400/80 break-words">{localError}</p>
         </div>
         <button onClick={resetState} className="btn-secondary flex items-center gap-2">
           <RotateCcw size={15} />
@@ -370,6 +359,18 @@ export function RunBackup() {
         <h1 className="text-2xl font-bold text-surface-50">Run Backup</h1>
         <p className="text-surface-400 mt-1">Execute a manual backup now</p>
       </div>
+
+      {backup.isRunning && (
+        <div className="flex items-center gap-3 px-4 py-3 rounded-lg bg-brand-500/8 border border-brand-500/20">
+          <Loader2 size={16} className="animate-spin text-brand-400 shrink-0" />
+          <p className="text-sm text-brand-300">
+            A backup is currently running.{' '}
+            <span onClick={() => window.scrollTo(0, document.body.scrollHeight)} className="underline cursor-pointer hover:text-brand-200">
+              View progress
+            </span>
+          </p>
+        </div>
+      )}
 
       {/* Connection selector */}
       <div className="card space-y-3">

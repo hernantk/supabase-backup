@@ -22,9 +22,12 @@ export function setupIpcHandlers(mainWindow: BrowserWindow | null) {
   // ── Backup ──────────────────────────────────────────────────────────────────
   ipcMain.handle('backup:run', async (_event, options: BackupOptions) => {
     const config = loadConfig()
-    return runBackup(config, options, (progress) => {
+    const result = await runBackup(config, options, (progress) => {
       mainWindow?.webContents.send('backup:progress', progress)
     })
+    // Notify listeners (context) so the global state is updated for manual runs too
+    mainWindow?.webContents.send('backup:complete', result)
+    return result
   })
 
   ipcMain.handle('backup:cancel', async () => {
