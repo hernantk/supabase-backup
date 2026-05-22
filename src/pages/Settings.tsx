@@ -140,15 +140,18 @@ export function Settings() {
 
   function saveEdit() {
     if (!config || !editingData) return
-    setConfig({
+    const updatedConfig = {
       ...config,
       connections: config.connections.map((c) =>
         c.id === editingData.id ? editingData : c
       ),
-    })
+    }
+    setConfig(updatedConfig)
     setExpandedId(null)
     setEditingData(null)
     setIsNewConn(false)
+    // Persist immediately
+    window.electronAPI.saveConfig(updatedConfig).catch(console.error)
   }
 
   function cancelEdit() {
@@ -233,14 +236,6 @@ export function Settings() {
           <h1 className="text-2xl font-bold text-surface-50">Settings</h1>
           <p className="text-surface-400 mt-1">Configure your backup preferences</p>
         </div>
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className="btn-primary flex items-center gap-2"
-        >
-          {saving ? <Loader2 size={16} className="animate-spin" /> : saved ? <CheckCircle2 size={16} /> : <Save size={16} />}
-          {saved ? 'Saved!' : 'Save Settings'}
-        </button>
       </div>
 
       {/* Tabs */}
@@ -724,6 +719,13 @@ export function Settings() {
               <TestTube size={14} />Test Connection
             </button>
           </DestinationSection>
+
+          <div className="flex justify-end pt-1">
+            <button onClick={handleSave} disabled={saving} className="btn-primary flex items-center gap-2 text-sm">
+              {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+              Save
+            </button>
+          </div>
         </div>
       )}
 
@@ -763,6 +765,13 @@ export function Settings() {
                     className="w-4 h-4 rounded border-surface-600 bg-surface-800 text-brand-500" />
                   <span className="text-sm text-surface-300">Notify on failure</span>
                 </label>
+              </div>
+
+              <div className="flex justify-end pt-1">
+                <button onClick={handleSave} disabled={saving} className="btn-primary flex items-center gap-2 text-sm">
+                  {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                  Save
+                </button>
               </div>
             </>
           )}

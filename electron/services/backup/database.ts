@@ -57,7 +57,13 @@ export async function dumpDatabase(
     currentProcess.stderr?.on('data', (data) => {
       const msg = data.toString()
       stderr += msg
-      onProgress?.(msg.trim())
+      // pg_dump outputs "no matching tables were found" as a non-fatal warning
+      // (exit 0) even when the connection works fine. Don't forward it as progress
+      // to avoid confusing users.
+      const trimmed = msg.trim()
+      if (trimmed && !trimmed.toLowerCase().includes('no matching tables were found')) {
+        onProgress?.(trimmed)
+      }
     })
 
     currentProcess.stdout?.on('data', (data) => {
@@ -110,8 +116,8 @@ export async function testSupabaseConnection(
   logger.info(`Testing connection via: ${pgDumpPath}`)
 
   return new Promise((resolve) => {
-    // Probe with a non-existent table name.
-    // If credentials are valid pg_dump exits 0 ("no matching tables" warning).
+    // Probe with a non-existent table name. pg_dump exits immediately with
+    // exit code 0 (and a benign "no matching tables" warning on stderr).
     // If connection fails it exits 1 with a clear FATAL error in stderr.
     const proc = spawn(
       pgDumpPath,
@@ -130,7 +136,16 @@ export async function testSupabaseConnection(
         return
       }
 
-      // EXIT 0 — pg_dump connected and finished (likely "no matching tables" warning, which is fine)
+      // If we see the "no matching tables" message, the connection works.
+      // This can happen even with a non-zero exit in some pg_dump versions.
+      const stderrLower = stderr.toLowerCase()
+      if (stderrLower.includes('no matching tables were found')) {
+        logger.info('Connection test: SUCCESS (pg_dump connected, no matching tables)')
+        resolve({ success: true, message: 'Connection successful!' })
+        return
+      }
+
+      // EXIT 0 — pg_dump connected and finished
       if (code === 0) {
         logger.info('Connection test: SUCCESS')
         resolve({ success: true, message: 'Connection successful!' })
@@ -139,7 +154,7 @@ export async function testSupabaseConnection(
 
       // EXIT != 0 — parse stderr for a human-readable reason
       logger.warn(`Connection test failed (code ${code}): ${stderr.substring(0, 200)}`)
-      const s = stderr.toLowerCase()
+      const s = stderrLower
 
       if (s.includes('password authentication failed') || s.includes('authentication failed')) {
         resolve({ success: false, message: 'Authentication failed — wrong password. Check the credentials in your Database URL.' })
