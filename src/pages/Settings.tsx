@@ -16,6 +16,7 @@ import {
   Calendar,
   Database,
   Settings2,
+  FileArchive,
 } from 'lucide-react'
 import { PgDumpSetup } from '../components/PgDumpSetup'
 
@@ -225,7 +226,7 @@ export function Settings() {
     { key: 'connections',   label: 'Connections',   icon: <Server size={14} /> },
     { key: 'destinations',  label: 'Destinations',  icon: <Database size={14} /> },
     { key: 'notifications', label: 'Notifications', icon: <Settings2 size={14} /> },
-    { key: 'pgdump',        label: 'pg_dump',       icon: null },
+    { key: 'pgdump',        label: 'pg_dump',       icon: <FileArchive size={14} /> },
   ] as const
 
   return (
