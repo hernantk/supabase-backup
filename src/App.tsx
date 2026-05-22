@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { SidebarNav } from './components/SidebarNav'
 import { TitleBar } from './components/TitleBar'
 import { Dashboard } from './pages/Dashboard'
@@ -11,7 +11,7 @@ import { BackupMiniProgress } from './components/BackupMiniProgress'
 
 export default function App() {
   return (
-    <BrowserRouter>
+    <HashRouter>
       <BackupProvider>
         <div className="h-screen flex flex-col overflow-hidden">
           <TitleBar />
@@ -31,6 +31,6 @@ export default function App() {
         </div>
         <BackupMiniProgress />
       </BackupProvider>
-    </BrowserRouter>
+    </HashRouter>
   )
 }
