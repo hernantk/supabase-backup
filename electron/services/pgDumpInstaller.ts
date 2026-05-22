@@ -28,12 +28,16 @@ export interface DownloadProgress {
   bytesTotal?: number
 }
 
+export interface WingetProgress {
+  phase: 'running' | 'done' | 'error'
+  message: string
+}
+
 // ─── Platform constants ──────────────────────────────────────────────────────
 
-// PostgreSQL 16 Windows x64 binaries from EnterpriseDB (~195 MB)
-// The zip contains: pgsql/bin/pg_dump.exe + required DLLs
+// PostgreSQL 16 Windows x64 binaries from EnterpriseDB — direct CDN link (~195 MB ZIP)
 const WINDOWS_DOWNLOAD_URL =
-  'https://sbp.enterprisedb.com/getfile.jsp?fileid=1258706'
+  'https://get.enterprisedb.com/postgresql/postgresql-16.6-1-windows-x64-binaries.zip'
 
 // Only these files are extracted from the zip (saves ~180 MB of disk space)
 const WINDOWS_REQUIRED_FILES: Array<{ from: string; to: string }> = [
@@ -190,7 +194,7 @@ export async function downloadPgDump(
   const zipPath = path.join(os.tmpdir(), 'pg_dump_setup.zip')
 
   // ── Step 1: Download ───────────────────────────────────────────────────────
-  onProgress({ phase: 'downloading', progress: 0, message: 'Starting download from EnterpriseDB...' })
+  onProgress({ phase: 'downloading', progress: 0, message: 'Starting download from EnterpriseDB CDN...' })
   logger.info(`Downloading pg_dump binaries from: ${WINDOWS_DOWNLOAD_URL}`)
 
   await downloadFile(WINDOWS_DOWNLOAD_URL, zipPath, (received, total) => {
@@ -209,6 +213,10 @@ export async function downloadPgDump(
     cleanupFile(zipPath)
     throw new Error('Download aborted by user')
   }
+
+  // ── Step 1b: Validate it's actually a ZIP ─────────────────────────────────
+  logger.info('Validating downloaded file...')
+  validateZipMagicBytes(zipPath)
 
   logger.info(`Download complete: ${zipPath}`)
   onProgress({ phase: 'extracting', progress: 0, message: 'Extracting binaries from archive...' })
@@ -230,6 +238,61 @@ export async function downloadPgDump(
   onProgress({ phase: 'done', progress: 100, message: `pg_dump installed to: ${outputDir}` })
 }
 
+// ─── Winget install (Windows) ─────────────────────────────────────────────────
+
+export async function installViaWinget(
+  onProgress: (p: WingetProgress) => void
+): Promise<void> {
+  if (process.platform !== 'win32') {
+    throw new Error('winget is only available on Windows.')
+  }
+
+  const logger = getLogger()
+  logger.info('Installing pg_dump via winget...')
+
+  return new Promise((resolve, reject) => {
+    // --accept-package-agreements --accept-source-agreements avoids interactive prompts
+    const proc = spawn('winget', [
+      'install',
+      '--id', 'PostgreSQL.PostgreSQL.16',
+      '--accept-package-agreements',
+      '--accept-source-agreements',
+      '--silent',
+    ], {
+      shell: true,
+      env: { ...process.env },
+    })
+
+    proc.stdout?.on('data', (d: Buffer) => {
+      const msg = d.toString().trim()
+      if (msg) onProgress({ phase: 'running', message: msg })
+    })
+
+    proc.stderr?.on('data', (d: Buffer) => {
+      const msg = d.toString().trim()
+      if (msg) onProgress({ phase: 'running', message: msg })
+    })
+
+    proc.on('close', (code) => {
+      if (code === 0) {
+        logger.info('winget install completed successfully')
+        onProgress({ phase: 'done', message: 'PostgreSQL installed. Detecting pg_dump...' })
+        resolve()
+      } else {
+        const msg = `winget exited with code ${code}. You may need to run as Administrator or install winget first.`
+        logger.error(msg)
+        reject(new Error(msg))
+      }
+    })
+
+    proc.on('error', (err) => {
+      const msg = `winget not found: ${err.message}. Install App Installer from the Microsoft Store.`
+      logger.error(msg)
+      reject(new Error(msg))
+    })
+  })
+}
+
 // ─── Linux install helper ─────────────────────────────────────────────────────
 
 export function getLinuxInstallCommands(): string[] {
@@ -242,48 +305,100 @@ export function getLinuxInstallCommands(): string[] {
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
+/**
+ * Download a URL to a local file, following redirects.
+ * Sends a browser-like User-Agent so CDN servers don't block the request.
+ */
 function downloadFile(
   url: string,
   dest: string,
   onProgress: (received: number, total: number) => void
 ): Promise<void> {
   return new Promise((resolve, reject) => {
-    const doRequest = (requestUrl: string) => {
-      const client = requestUrl.startsWith('https') ? https : http
-      client
-        .get(requestUrl, (res) => {
-          // Follow redirects
-          if (res.statusCode === 301 || res.statusCode === 302 || res.statusCode === 307) {
-            const location = res.headers.location
-            if (!location) { reject(new Error('Redirect with no Location header')); return }
-            doRequest(location)
-            return
-          }
+    const doRequest = (requestUrl: string, redirectCount = 0) => {
+      if (redirectCount > 10) { reject(new Error('Too many redirects')); return }
 
-          if (res.statusCode !== 200) {
-            reject(new Error(`HTTP ${res.statusCode}: ${res.statusMessage}`))
-            return
-          }
+      const parsedUrl = new URL(requestUrl)
+      const client = parsedUrl.protocol === 'https:' ? https : http
 
-          const total = parseInt(res.headers['content-length'] || '0', 10)
-          let received = 0
-          const out = fs.createWriteStream(dest)
+      const options = {
+        hostname: parsedUrl.hostname,
+        port: parsedUrl.port || (parsedUrl.protocol === 'https:' ? 443 : 80),
+        path: parsedUrl.pathname + parsedUrl.search,
+        method: 'GET',
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
+          'Accept': 'application/zip,application/octet-stream,*/*',
+        },
+      }
 
-          res.on('data', (chunk: Buffer) => {
-            received += chunk.length
-            onProgress(received, total)
-          })
+      const req = client.request(options, (res) => {
+        // Follow redirects
+        if (
+          res.statusCode === 301 ||
+          res.statusCode === 302 ||
+          res.statusCode === 303 ||
+          res.statusCode === 307 ||
+          res.statusCode === 308
+        ) {
+          const location = res.headers.location
+          if (!location) { reject(new Error('Redirect with no Location header')); return }
+          // Consume response to free socket
+          res.resume()
+          doRequest(location, redirectCount + 1)
+          return
+        }
 
-          res.pipe(out)
-          out.on('finish', () => { out.close(); resolve() })
-          out.on('error', reject)
-          res.on('error', reject)
+        if (res.statusCode !== 200) {
+          reject(new Error(`HTTP ${res.statusCode}: ${res.statusMessage} (${requestUrl})`))
+          return
+        }
+
+        const total = parseInt(res.headers['content-length'] || '0', 10)
+        let received = 0
+        const out = fs.createWriteStream(dest)
+
+        res.on('data', (chunk: Buffer) => {
+          received += chunk.length
+          onProgress(received, total)
         })
-        .on('error', reject)
+
+        res.pipe(out)
+        out.on('finish', () => { out.close(); resolve() })
+        out.on('error', reject)
+        res.on('error', reject)
+      })
+
+      req.on('error', reject)
+      req.end()
     }
 
     doRequest(url)
   })
+}
+
+/**
+ * Verify the first 4 bytes of the file are the ZIP local-file-header signature PK\x03\x04.
+ * Throws a descriptive error if the file is HTML or otherwise not a ZIP.
+ */
+function validateZipMagicBytes(filePath: string): void {
+  const buf = Buffer.alloc(4)
+  const fd = fs.openSync(filePath, 'r')
+  try {
+    fs.readSync(fd, buf, 0, 4, 0)
+  } finally {
+    fs.closeSync(fd)
+  }
+
+  // ZIP magic: 50 4B 03 04
+  if (buf[0] !== 0x50 || buf[1] !== 0x4b || buf[2] !== 0x03 || buf[3] !== 0x04) {
+    // Try to give a helpful snippet of what was actually downloaded
+    const snippet = fs.readFileSync(filePath).slice(0, 256).toString('utf8').replace(/\n/g, ' ')
+    throw new Error(
+      `Downloaded file is not a valid ZIP archive (magic bytes: ${buf.toString('hex')}). ` +
+      `The server may have returned an error page. First 256 bytes: ${snippet.substring(0, 200)}`
+    )
+  }
 }
 
 function extractRequiredFiles(

@@ -56,6 +56,7 @@ export function Settings() {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null)
+  const [testing, setTesting] = useState(false)
   const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({})
   const [activeTab, setActiveTab] = useState<'supabase' | 'destinations' | 'schedule' | 'notifications' | 'pgdump'>('supabase')
 
@@ -91,8 +92,13 @@ export function Settings() {
   async function handleTestConnection() {
     if (!config) return
     setTestResult(null)
-    const result = await window.electronAPI.testConnection(config.supabase)
-    setTestResult(result)
+    setTesting(true)
+    try {
+      const result = await window.electronAPI.testConnection(config.supabase)
+      setTestResult(result)
+    } finally {
+      setTesting(false)
+    }
   }
 
   async function handleTestDestination(type: string) {
@@ -260,9 +266,13 @@ export function Settings() {
               </div>
             </div>
 
-            <button onClick={handleTestConnection} className="btn-secondary flex items-center gap-2">
-              <TestTube size={16} />
-              Test Connection
+            <button
+              onClick={handleTestConnection}
+              disabled={testing}
+              className="btn-secondary flex items-center gap-2"
+            >
+              {testing ? <Loader2 size={16} className="animate-spin" /> : <TestTube size={16} />}
+              {testing ? 'Testing...' : 'Test Connection'}
             </button>
           </div>
         )}

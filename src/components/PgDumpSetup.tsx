@@ -11,6 +11,7 @@ import {
   StopCircle,
   Info,
   AlertTriangle,
+  Package,
 } from 'lucide-react'
 import { ProgressBar } from './ProgressBar'
 
@@ -29,9 +30,14 @@ interface DownloadProgress {
   bytesTotal?: number
 }
 
+interface WingetProgress {
+  phase: 'running' | 'done' | 'error'
+  message: string
+}
+
 const SOURCE_LABELS: Record<string, string> = {
   path:      'System PATH',
-  resources: 'App resources',
+  resources: 'App resources (bundled)',
   custom:    'Custom path',
 }
 
@@ -40,6 +46,8 @@ export function PgDumpSetup() {
   const [detecting, setDetecting] = useState(false)
   const [downloading, setDownloading] = useState(false)
   const [downloadProgress, setDownloadProgress] = useState<DownloadProgress | null>(null)
+  const [installingWinget, setInstallingWinget] = useState(false)
+  const [wingetLog, setWingetLog] = useState<string[]>([])
   const [linuxCommands, setLinuxCommands] = useState<string[]>([])
   const [copiedCmd, setCopiedCmd] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -50,7 +58,7 @@ export function PgDumpSetup() {
   useEffect(() => {
     handleDetect()
 
-    const unsub = window.electronAPI.onPgDumpDownloadProgress((p) => {
+    const unsubDownload = window.electronAPI.onPgDumpDownloadProgress((p) => {
       setDownloadProgress(p)
       if (p.phase === 'done') {
         setDownloading(false)
@@ -62,11 +70,23 @@ export function PgDumpSetup() {
       }
     })
 
+    const unsubWinget = window.electronAPI.onPgDumpWingetProgress((p: WingetProgress) => {
+      setWingetLog((prev) => [...prev.slice(-49), p.message])
+      if (p.phase === 'done') {
+        setInstallingWinget(false)
+        handleDetect()
+      }
+      if (p.phase === 'error') {
+        setInstallingWinget(false)
+        setError(p.message)
+      }
+    })
+
     if (isLinux) {
       window.electronAPI.getLinuxInstallCommands().then(setLinuxCommands)
     }
 
-    return unsub
+    return () => { unsubDownload(); unsubWinget() }
   }, [])
 
   async function handleDetect() {
@@ -109,11 +129,25 @@ export function PgDumpSetup() {
     setDownloadProgress(null)
   }
 
+  async function handleWinget() {
+    setInstallingWinget(true)
+    setWingetLog([])
+    setError(null)
+    try {
+      await window.electronAPI.installPgDumpViaWinget()
+    } catch (err: any) {
+      setInstallingWinget(false)
+      setError(err.message)
+    }
+  }
+
   function copyCommand(cmd: string, idx: number) {
     navigator.clipboard.writeText(cmd)
     setCopiedCmd(idx)
     setTimeout(() => setCopiedCmd(null), 2000)
   }
+
+  const isBusy = downloading || installingWinget
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
@@ -142,7 +176,7 @@ export function PgDumpSetup() {
                 <p className="text-xs text-emerald-400/70 mt-0.5 font-mono truncate">
                   {info.path}
                 </p>
-                <div className="flex gap-3 mt-1">
+                <div className="flex flex-wrap gap-3 mt-1">
                   {info.version && (
                     <span className="text-xs text-surface-400">Version: {info.version}</span>
                   )}
@@ -157,7 +191,7 @@ export function PgDumpSetup() {
               <>
                 <p className="text-sm font-medium text-amber-300">pg_dump not found</p>
                 <p className="text-xs text-amber-400/70 mt-0.5">
-                  Database backup requires pg_dump to be installed. Choose an option below.
+                  Database backup requires pg_dump. Choose an installation option below.
                 </p>
               </>
             )}
@@ -174,7 +208,7 @@ export function PgDumpSetup() {
         </div>
       )}
 
-      {/* Detecting spinner */}
+      {/* Detecting spinner (first load) */}
       {detecting && !info && (
         <div className="flex items-center gap-2 text-surface-400 text-sm py-2">
           <Loader2 size={16} className="animate-spin" />
@@ -186,11 +220,11 @@ export function PgDumpSetup() {
       {error && (
         <div className="flex items-start gap-2 p-3 rounded-lg border border-red-500/20 bg-red-500/5">
           <XCircle size={16} className="text-red-400 shrink-0 mt-0.5" />
-          <p className="text-xs text-red-400">{error}</p>
+          <p className="text-xs text-red-400 break-all">{error}</p>
         </div>
       )}
 
-      {/* Download progress */}
+      {/* Download ZIP progress */}
       {downloadProgress && downloading && (
         <div className="card space-y-3">
           <div className="flex items-center justify-between">
@@ -224,10 +258,26 @@ export function PgDumpSetup() {
         </div>
       )}
 
-      {/* Actions */}
-      {!downloading && (
+      {/* Winget install progress */}
+      {installingWinget && (
+        <div className="card space-y-2">
+          <div className="flex items-center gap-2">
+            <Loader2 size={16} className="text-brand-400 animate-spin" />
+            <span className="text-sm font-medium text-surface-200">Installing via winget...</span>
+          </div>
+          {wingetLog.length > 0 && (
+            <div className="bg-surface-900 rounded p-2 max-h-32 overflow-y-auto">
+              {wingetLog.map((line, i) => (
+                <p key={i} className="text-xs font-mono text-surface-400 leading-relaxed">{line}</p>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Action buttons */}
+      {!isBusy && (
         <div className="flex flex-wrap gap-2">
-          {/* Detect */}
           <button
             onClick={handleDetect}
             disabled={detecting}
@@ -237,39 +287,52 @@ export function PgDumpSetup() {
             Detect
           </button>
 
-          {/* Browse */}
           <button onClick={handleBrowse} className="btn-secondary flex items-center gap-2 text-sm">
             <FolderOpen size={14} />
             Browse binary
           </button>
 
-          {/* Download (Windows only) */}
           {isWindows && (
-            <button
-              onClick={handleDownload}
-              className="btn-primary flex items-center gap-2 text-sm"
-            >
-              <Download size={14} />
-              Download pg_dump (~195 MB)
-            </button>
+            <>
+              <button
+                onClick={handleWinget}
+                className="btn-secondary flex items-center gap-2 text-sm"
+                title="Installs PostgreSQL 16 via Windows Package Manager (winget)"
+              >
+                <Package size={14} />
+                Install via winget
+              </button>
+
+              <button
+                onClick={handleDownload}
+                className="btn-primary flex items-center gap-2 text-sm"
+                title="Downloads pg_dump.exe + required DLLs directly from EnterpriseDB CDN (~195 MB download, ~15 MB kept)"
+              >
+                <Download size={14} />
+                Download pg_dump (~195 MB)
+              </button>
+            </>
           )}
         </div>
       )}
 
-      {/* Windows info */}
-      {isWindows && !info?.found && !downloading && (
+      {/* Windows info panel (shown when not found) */}
+      {isWindows && !info?.found && !isBusy && (
         <div className="flex items-start gap-2 p-3 rounded-lg bg-surface-800/50 border border-surface-700">
           <Info size={14} className="text-surface-400 shrink-0 mt-0.5" />
-          <p className="text-xs text-surface-400 leading-relaxed">
-            Clicking <strong className="text-surface-300">Download pg_dump</strong> will download the
-            official PostgreSQL 16 binary package from{' '}
-            <span className="text-brand-400">EnterpriseDB</span> (~195 MB). Only the pg_dump executable
-            and its required DLLs (~15 MB) will be kept. This is a one-time setup.
-            <br />
-            <br />
-            Alternatively, install PostgreSQL Client via:{' '}
-            <span className="font-mono text-surface-300">winget install PostgreSQL.PostgreSQL.16</span>
-          </p>
+          <div className="text-xs text-surface-400 leading-relaxed space-y-2">
+            <p>
+              <strong className="text-surface-300">Install via winget</strong> — runs{' '}
+              <span className="font-mono text-surface-300">winget install PostgreSQL.PostgreSQL.16</span>.
+              Requires the App Installer (pre-installed on Windows 11). Installs the full PostgreSQL
+              suite to <span className="font-mono">C:\Program Files\PostgreSQL\16\</span>.
+            </p>
+            <p>
+              <strong className="text-surface-300">Download pg_dump</strong> — downloads the official
+              PostgreSQL 16 binary ZIP (~195 MB) from EnterpriseDB CDN and extracts only
+              pg_dump.exe + required DLLs (~15 MB) into the app resources folder. No system-wide install.
+            </p>
+          </div>
         </div>
       )}
 

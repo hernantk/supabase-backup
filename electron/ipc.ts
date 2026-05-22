@@ -10,6 +10,7 @@ import {
   detectPgDump,
   downloadPgDump,
   abortDownload,
+  installViaWinget,
   setCustomPgDumpPath,
   getLinuxInstallCommands,
 } from './services/pgDumpInstaller'
@@ -115,6 +116,12 @@ export function setupIpcHandlers(mainWindow: BrowserWindow | null) {
 
   ipcMain.handle('pgdump:linux-commands', async () => {
     return getLinuxInstallCommands()
+  })
+
+  ipcMain.handle('pgdump:install-winget', async () => {
+    return installViaWinget((progress) => {
+      mainWindow?.webContents.send('pgdump:winget-progress', progress)
+    })
   })
 
   // Window controls

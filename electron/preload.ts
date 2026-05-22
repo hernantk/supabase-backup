@@ -33,6 +33,7 @@ export interface ElectronAPI {
   abortPgDumpDownload: () => Promise<void>
   setPgDumpPath: (path: string) => Promise<void>
   getLinuxInstallCommands: () => Promise<string[]>
+  installPgDumpViaWinget: () => Promise<void>
 
   // Window controls
   minimizeWindow: () => void
@@ -43,6 +44,7 @@ export interface ElectronAPI {
   onBackupProgress: (callback: (progress: BackupProgress) => void) => () => void
   onBackupComplete: (callback: (result: BackupResult) => void) => () => void
   onPgDumpDownloadProgress: (callback: (progress: PgDumpDownloadProgress) => void) => () => void
+  onPgDumpWingetProgress: (callback: (progress: PgDumpWingetProgress) => void) => () => void
 }
 
 export interface BackupOptions {
@@ -174,6 +176,11 @@ export interface PgDumpDownloadProgress {
   bytesTotal?: number
 }
 
+export interface PgDumpWingetProgress {
+  phase: 'running' | 'done' | 'error'
+  message: string
+}
+
 const electronAPI: ElectronAPI = {
   // Backup
   runBackup: (options) => ipcRenderer.invoke('backup:run', options),
@@ -207,6 +214,7 @@ const electronAPI: ElectronAPI = {
   abortPgDumpDownload: () => ipcRenderer.invoke('pgdump:abort'),
   setPgDumpPath: (path) => ipcRenderer.invoke('pgdump:set-path', path),
   getLinuxInstallCommands: () => ipcRenderer.invoke('pgdump:linux-commands'),
+  installPgDumpViaWinget: () => ipcRenderer.invoke('pgdump:install-winget'),
 
   // Window
   minimizeWindow: () => ipcRenderer.send('window:minimize'),
@@ -228,6 +236,11 @@ const electronAPI: ElectronAPI = {
     const handler = (_event: any, progress: PgDumpDownloadProgress) => callback(progress)
     ipcRenderer.on('pgdump:download-progress', handler)
     return () => ipcRenderer.removeListener('pgdump:download-progress', handler)
+  },
+  onPgDumpWingetProgress: (callback) => {
+    const handler = (_event: any, progress: PgDumpWingetProgress) => callback(progress)
+    ipcRenderer.on('pgdump:winget-progress', handler)
+    return () => ipcRenderer.removeListener('pgdump:winget-progress', handler)
   },
 }
 

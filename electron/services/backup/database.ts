@@ -1,27 +1,22 @@
 import { spawn, ChildProcess } from 'child_process'
 import path from 'path'
 import fs from 'fs'
-import { app } from 'electron'
 import { getLogger } from '../logger'
+import { detectPgDump } from '../pgDumpInstaller'
 import type { SupabaseConfig } from '../../preload'
 
 let currentProcess: ChildProcess | null = null
 
-function getPgDumpPath(): string {
-  const resourcesPath = app.isPackaged
-    ? path.join(process.resourcesPath, 'resources', 'pg_dump')
-    : path.join(__dirname, '../../resources/pg_dump')
-
-  const platform = process.platform
-  const binary = platform === 'win32' ? 'pg_dump.exe' : 'pg_dump'
-  const pgDumpPath = path.join(resourcesPath, platform, binary)
-
-  // Fallback to system pg_dump
-  if (!fs.existsSync(pgDumpPath)) {
-    return 'pg_dump'
+/** Returns the best available pg_dump binary path, or throws with a helpful message. */
+async function resolvePgDumpPath(): Promise<string> {
+  const info = await detectPgDump()
+  if (info.found && info.path) {
+    return info.path
   }
-
-  return pgDumpPath
+  throw new Error(
+    'pg_dump is not installed or not found. ' +
+    'Go to Settings → pg_dump tab to detect, download, or point to an existing installation.'
+  )
 }
 
 export async function dumpDatabase(
@@ -36,11 +31,11 @@ export async function dumpDatabase(
     fs.mkdirSync(outputDir, { recursive: true })
   }
 
-  return new Promise((resolve, reject) => {
-    const pgDumpPath = getPgDumpPath()
-    logger.info(`Starting pg_dump with binary: ${pgDumpPath}`)
-    onProgress?.('Initiating database dump...')
+  const pgDumpPath = await resolvePgDumpPath()
+  logger.info(`Starting pg_dump: ${pgDumpPath}`)
+  onProgress?.('Initiating database dump...')
 
+  return new Promise((resolve, reject) => {
     const args = [
       config.dbUrl,
       '--format=plain',
@@ -76,7 +71,7 @@ export async function dumpDatabase(
         onProgress?.(`Database dump completed (${formatBytes(stats.size)})`)
         resolve(outputFile)
       } else {
-        const error = `pg_dump failed with code ${code}: ${stderr}`
+        const error = `pg_dump failed with exit code ${code}: ${stderr}`
         logger.error(error)
         reject(new Error(error))
       }
@@ -84,8 +79,9 @@ export async function dumpDatabase(
 
     currentProcess.on('error', (err) => {
       currentProcess = null
-      logger.error(`pg_dump error: ${err.message}`)
-      reject(new Error(`Failed to start pg_dump: ${err.message}. Make sure pg_dump is installed or included in resources.`))
+      const msg = `Failed to start pg_dump: ${err.message}`
+      logger.error(msg)
+      reject(new Error(msg))
     })
   })
 }
@@ -95,44 +91,86 @@ export async function testSupabaseConnection(
 ): Promise<{ success: boolean; message: string }> {
   const logger = getLogger()
 
-  try {
-    // Test using pg_dump with --version to verify it's available
-    const pgDumpPath = getPgDumpPath()
-
-    // Try a quick connection test using the database URL
-    return new Promise((resolve) => {
-      const testProcess = spawn(pgDumpPath, [config.dbUrl, '--schema-only', '--table=_dummy_nonexist_'], {
-        timeout: 10000,
-      })
-
-      let stderr = ''
-      testProcess.stderr?.on('data', (data) => {
-        stderr += data.toString()
-      })
-
-      testProcess.on('close', (code) => {
-        // pg_dump will fail because the table doesn't exist, but if it connects, we get specific errors
-        if (stderr.includes('no matching tables') || stderr.includes('does not exist') || code === 0) {
-          logger.info('Supabase connection test: SUCCESS')
-          resolve({ success: true, message: 'Connection successful!' })
-        } else if (stderr.includes('could not connect') || stderr.includes('connection refused')) {
-          resolve({ success: false, message: 'Could not connect to database. Check your database URL.' })
-        } else if (stderr.includes('password authentication failed')) {
-          resolve({ success: false, message: 'Authentication failed. Check your credentials.' })
-        } else {
-          // Even if we get other errors, a response means we connected
-          resolve({ success: true, message: 'Connection established.' })
-        }
-      })
-
-      testProcess.on('error', (err) => {
-        resolve({ success: false, message: `pg_dump not found: ${err.message}` })
-      })
-    })
-  } catch (error: any) {
-    logger.error(`Connection test error: ${error.message}`)
-    return { success: false, message: error.message }
+  // Guard: empty URL
+  if (!config.dbUrl?.trim()) {
+    return { success: false, message: 'Database URL is empty. Enter your connection string first.' }
   }
+
+  // Guard: pg_dump must be available
+  const pgDumpInfo = await detectPgDump()
+  if (!pgDumpInfo.found || !pgDumpInfo.path) {
+    return {
+      success: false,
+      message: 'pg_dump not found. Go to Settings → pg_dump tab to install it, then test again.',
+    }
+  }
+
+  const pgDumpPath = pgDumpInfo.path
+  logger.info(`Testing connection via: ${pgDumpPath}`)
+
+  return new Promise((resolve) => {
+    // Probe with a non-existent table name.
+    // If credentials are valid pg_dump exits 0 ("no matching tables" warning).
+    // If connection fails it exits 1 with a clear FATAL error in stderr.
+    const proc = spawn(
+      pgDumpPath,
+      ['-d', config.dbUrl, '--schema-only', '-t', 'supabase_backup_probe_xyz'],
+      { timeout: 15000, killSignal: 'SIGTERM' }
+    )
+
+    let stderr = ''
+    proc.stderr?.on('data', (d: Buffer) => { stderr += d.toString() })
+
+    proc.on('close', (code, signal) => {
+      // Killed by our 15s timeout
+      if (signal === 'SIGTERM') {
+        logger.warn('Connection test timed out')
+        resolve({ success: false, message: 'Connection timed out after 15 s. Check that the host and port in your Database URL are reachable.' })
+        return
+      }
+
+      // EXIT 0 — pg_dump connected and finished (likely "no matching tables" warning, which is fine)
+      if (code === 0) {
+        logger.info('Connection test: SUCCESS')
+        resolve({ success: true, message: 'Connection successful!' })
+        return
+      }
+
+      // EXIT != 0 — parse stderr for a human-readable reason
+      logger.warn(`Connection test failed (code ${code}): ${stderr.substring(0, 200)}`)
+      const s = stderr.toLowerCase()
+
+      if (s.includes('password authentication failed') || s.includes('authentication failed')) {
+        resolve({ success: false, message: 'Authentication failed — wrong password. Check the credentials in your Database URL.' })
+      } else if (s.includes('could not translate host name') || s.includes('name or service not known') || s.includes('nodename nor servname provided')) {
+        resolve({ success: false, message: 'Host not found. Check the hostname in your Database URL.' })
+      } else if (s.includes('connection refused')) {
+        resolve({ success: false, message: 'Connection refused — the server is not accepting connections on that port.' })
+      } else if (s.includes('could not connect')) {
+        resolve({ success: false, message: 'Could not connect. Check the host and port in your Database URL.' })
+      } else if (s.includes('database') && s.includes('does not exist')) {
+        resolve({ success: false, message: 'Database not found. Check the database name in your Database URL.' })
+      } else if (s.includes('role') && s.includes('does not exist')) {
+        resolve({ success: false, message: 'User not found. Check the username in your Database URL.' })
+      } else if (s.includes('ssl') || s.includes('certificate')) {
+        resolve({ success: false, message: 'SSL/TLS error. Try appending ?sslmode=require to your Database URL.' })
+      } else if (s.includes('timeout') || s.includes('timed out')) {
+        resolve({ success: false, message: 'Connection timed out. Check that the host and port are reachable.' })
+      } else {
+        // Show the first meaningful error line from pg_dump
+        const firstError = stderr
+          .split('\n')
+          .find((l) => /fatal|error|failed/i.test(l))
+          ?.trim()
+        resolve({ success: false, message: firstError ?? `Connection failed (pg_dump exit code ${code}).` })
+      }
+    })
+
+    proc.on('error', (err) => {
+      logger.error(`Connection test spawn error: ${err.message}`)
+      resolve({ success: false, message: `Failed to run pg_dump: ${err.message}` })
+    })
+  })
 }
 
 export function cancelDatabaseBackup(): void {
