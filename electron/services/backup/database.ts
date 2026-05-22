@@ -21,11 +21,12 @@ async function resolvePgDumpPath(): Promise<string> {
 
 export async function dumpDatabase(
   config: SupabaseConfig,
+  label: string,
   outputDir: string,
   onProgress?: (message: string) => void
 ): Promise<string> {
   const logger = getLogger()
-  const outputFile = path.join(outputDir, `database_${Date.now()}.sql`)
+  const outputFile = path.join(outputDir, `database_${label}_${Date.now()}.sql`)
 
   if (!fs.existsSync(outputDir)) {
     fs.mkdirSync(outputDir, { recursive: true })

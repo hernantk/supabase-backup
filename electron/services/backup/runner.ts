@@ -35,7 +35,8 @@ export async function runBackup(
 
   const logger = getLogger()
   const startTime = Date.now()
-  const backupId = `backup_${Date.now()}`
+  const slug = sanitizeName(connection.name)
+  const backupId = `backup_${slug}_${Date.now()}`
   const tempDir = path.join(os.tmpdir(), 'supabase-backup', backupId)
 
   if (!fs.existsSync(tempDir)) {
@@ -51,7 +52,7 @@ export async function runBackup(
     if (include.includes('database') && !isCancelled) {
       onProgress({ stage: 'database', progress: 0, message: 'Starting database backup...' })
 
-      await dumpDatabase(connection.supabase, tempDir, (msg) => {
+      await dumpDatabase(connection.supabase, slug, tempDir, (msg) => {
         onProgress({ stage: 'database', progress: 50, message: msg })
       })
 
@@ -198,6 +199,15 @@ function getEnabledDestinations(config: AppConfig): string[] {
   if (config.destinations.gcs.enabled) destinations.push('gcs')
   if (config.destinations.azure.enabled) destinations.push('azure')
   return destinations
+}
+
+function sanitizeName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '')
+    .slice(0, 32) || 'unnamed'
 }
 
 function getDirectorySize(dirPath: string): number {
