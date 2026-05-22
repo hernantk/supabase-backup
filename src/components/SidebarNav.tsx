@@ -46,7 +46,7 @@ export function SidebarNav() {
       </div>
 
       <div className="p-4 border-t border-surface-800">
-        <div className="px-3 py-2 rounded-lg bg-surface-800/50">
+        <div className="px-3 py-2 flex flex-col items-center rounded-lg bg-surface-800/50">
           <p className="text-xs text-surface-500">Version</p>
           <p className="text-sm text-surface-300 font-mono">1.0.0</p>
         </div>
