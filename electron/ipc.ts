@@ -6,7 +6,7 @@ import fs from 'fs'
 import { getBackupHistory, deleteBackupRecord } from './services/history'
 import { testSupabaseConnection } from './services/backup/database'
 import { testDestination } from './services/destinations/tester'
-import { syncSchedules, stopAllSchedulers, getSchedulerStatus } from './services/scheduler'
+import { syncSchedules, stopAllSchedulers, getSchedulerStatus, validateCron } from './services/scheduler'
 import { queryLogs } from './services/logger'
 import {
   detectPgDump,
@@ -73,7 +73,7 @@ export function setupIpcHandlers(mainWindow: BrowserWindow | null) {
   ipcMain.handle('config:save', async (_event, config: AppConfig) => {
     saveConfig(config)
     // Automatically reconcile all scheduled tasks whenever config is saved
-    syncSchedules(config, mainWindow)
+    syncSchedules(config)
   })
 
   ipcMain.handle('config:test-connection', async (_event, config) => {
@@ -96,7 +96,11 @@ export function setupIpcHandlers(mainWindow: BrowserWindow | null) {
 
   ipcMain.handle('scheduler:sync', async () => {
     const config = loadConfig()
-    syncSchedules(config, mainWindow)
+    syncSchedules(config)
+  })
+
+  ipcMain.handle('scheduler:validate-cron', async (_event, expression: string) => {
+    return validateCron(expression)
   })
 
   ipcMain.handle('scheduler:stop', async () => {

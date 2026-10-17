@@ -34,6 +34,8 @@ interface ConnectionSchedulerStatus {
   cron: string
   nextRun: string | null
   lastRun: string | null
+  lastStatus: 'success' | 'failed' | null
+  lastError: string | null
 }
 
 interface SchedulerStatus {
@@ -50,7 +52,15 @@ export function Dashboard() {
 
   useEffect(() => { loadData() }, [])
 
-  async function loadData() {
+  // Keep history + next-run times fresh (scheduled backups finish while this page is open)
+  useEffect(() => {
+    const refresh = () => { loadData(true) }
+    const unsub = window.electronAPI.onBackupComplete(refresh)
+    const timer = setInterval(refresh, 30_000)
+    return () => { unsub(); clearInterval(timer) }
+  }, [])
+
+  async function loadData(silent = false) {
     try {
       const [historyData, schedulerData, cfg] = await Promise.all([
         window.electronAPI.getBackupHistory(),
@@ -64,7 +74,7 @@ export function Dashboard() {
     } catch (err) {
       console.error('Failed to load data:', err)
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }
 
@@ -95,12 +105,12 @@ export function Dashboard() {
   return (
     <div className="space-y-6 max-w-6xl">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-surface-50">Dashboard</h1>
           <p className="text-surface-400 mt-1">Overview of your Supabase backups</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           {localBackupPath && (
             <button
               onClick={() => window.electronAPI.openFolder(localBackupPath)}
@@ -193,14 +203,32 @@ export function Dashboard() {
                   </div>
                 </div>
               )}
-              <div className="space-y-1.5 pt-1 border-t border-surface-700">
+              <div className="space-y-2 pt-3 border-t border-surface-700">
                 {scheduler.connections.map((conn) => (
-                  <div key={conn.connectionId} className="flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-1.5">
-                      <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                      <span className="text-surface-300">{conn.connectionName}</span>
+                  <div key={conn.connectionId} className="flex items-start justify-between gap-3 text-xs">
+                    <div className="flex items-start gap-1.5 min-w-0">
+                      <div
+                        className={`w-1.5 h-1.5 mt-1 rounded-full shrink-0 ${
+                          conn.running ? 'bg-brand-400 animate-pulse'
+                            : conn.lastStatus === 'failed' ? 'bg-red-400' : 'bg-emerald-400'
+                        }`}
+                      />
+                      <div className="min-w-0">
+                        <p className="text-surface-300 truncate">{conn.connectionName}</p>
+                        {conn.running ? (
+                          <p className="text-brand-400">Queued / running…</p>
+                        ) : conn.lastStatus === 'failed' ? (
+                          <p className="text-red-400 truncate" title={conn.lastError ?? undefined}>
+                            Last run failed{conn.lastError ? `: ${conn.lastError}` : ''}
+                          </p>
+                        ) : conn.nextRun ? (
+                          <p className="text-surface-500">
+                            Next: {new Date(conn.nextRun).toLocaleString('pt-BR')}
+                          </p>
+                        ) : null}
+                      </div>
                     </div>
-                    <span className="font-mono text-surface-500">{conn.cron}</span>
+                    <span className="font-mono text-surface-500 shrink-0">{conn.cron}</span>
                   </div>
                 ))}
               </div>

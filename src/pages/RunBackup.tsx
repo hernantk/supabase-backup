@@ -361,7 +361,7 @@ export function RunBackup() {
       </div>
 
       {backup.isRunning && (
-        <div className="flex items-center gap-3 px-4 py-3 rounded-lg bg-brand-500/8 border border-brand-500/20">
+        <div className="flex items-center gap-3 px-4 py-3 rounded-lg bg-brand-500/10 border border-brand-500/20">
           <Loader2 size={16} className="animate-spin text-brand-400 shrink-0" />
           <p className="text-sm text-brand-300">
             A backup is currently running.{' '}

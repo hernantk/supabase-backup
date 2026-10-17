@@ -32,7 +32,10 @@ export class LocalDestination implements DestinationProvider {
 
   async list(): Promise<string[]> {
     if (!fs.existsSync(this.basePath)) return []
-    return fs.readdirSync(this.basePath).sort().reverse()
+    // Files only — never directories or anything we did not create
+    return fs.readdirSync(this.basePath, { withFileTypes: true })
+      .filter((entry) => entry.isFile())
+      .map((entry) => entry.name)
   }
 
   async delete(remoteName: string): Promise<void> {

@@ -65,7 +65,7 @@ app.whenReady().then(async () => {
   createWindow()
 
   setupIpcHandlers(mainWindow)
-  initScheduler(config, mainWindow)
+  initScheduler(config)
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

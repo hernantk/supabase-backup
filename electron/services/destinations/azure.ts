@@ -34,9 +34,10 @@ export class AzureDestination implements DestinationProvider {
   async list(): Promise<string[]> {
     const blobs: string[] = []
     for await (const blob of this.containerClient.listBlobsFlat({ prefix: 'supabase-backups/' })) {
-      blobs.push(blob.name)
+      const name = blob.name.replace(/^supabase-backups\//, '')
+      if (name) blobs.push(name)
     }
-    return blobs.sort().reverse()
+    return blobs
   }
 
   async delete(remoteName: string): Promise<void> {

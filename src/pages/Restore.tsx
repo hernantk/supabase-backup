@@ -308,7 +308,7 @@ export function Restore() {
       </div>
 
       {/* Warning banner */}
-      <div className="flex items-start gap-3 px-4 py-3 rounded-lg bg-amber-500/8 border border-amber-500/20">
+      <div className="flex items-start gap-3 px-4 py-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
         <TriangleAlert size={16} className="text-amber-400 mt-0.5 shrink-0" />
         <p className="text-sm text-amber-300/90">
           Restore will <strong>drop and recreate all database objects</strong>. All existing data will be permanently replaced by the backup.

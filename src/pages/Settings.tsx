@@ -81,7 +81,22 @@ export function Settings() {
   // Secret visibility
   const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({})
 
+  // Cron validation for the connection being edited
+  const [cronCheck, setCronCheck] = useState<{ valid: boolean; error?: string; nextRun: string | null } | null>(null)
+
   useEffect(() => { loadConfig() }, [])
+
+  const editingCron = editingData?.schedule.enabled ? editingData.schedule.cron : null
+  useEffect(() => {
+    if (editingCron === null) { setCronCheck(null); return }
+    let cancelled = false
+    const timer = setTimeout(() => {
+      window.electronAPI.validateCron(editingCron)
+        .then((r) => { if (!cancelled) setCronCheck(r) })
+        .catch(() => { if (!cancelled) setCronCheck(null) })
+    }, 250)
+    return () => { cancelled = true; clearTimeout(timer) }
+  }, [editingCron])
 
   async function loadConfig() {
     try {
@@ -141,6 +156,7 @@ export function Settings() {
 
   function saveEdit() {
     if (!config || !editingData) return
+    if (editingData.schedule.enabled && cronCheck && !cronCheck.valid) return
     const updatedConfig = {
       ...config,
       connections: config.connections.map((c) =>
@@ -171,8 +187,11 @@ export function Settings() {
 
   function deleteConnection(id: string) {
     if (!config || config.connections.length <= 1) return
-    setConfig({ ...config, connections: config.connections.filter((c) => c.id !== id) })
-    if (expandedId === id) { setExpandedId(null); setEditingData(null) }
+    const updatedConfig = { ...config, connections: config.connections.filter((c) => c.id !== id) }
+    setConfig(updatedConfig)
+    if (expandedId === id) { setExpandedId(null); setEditingData(null); setIsNewConn(false) }
+    // Persist right away so the deleted connection's schedule stops firing
+    window.electronAPI.saveConfig(updatedConfig).catch(console.error)
   }
 
   function updateEditingField(path: string[], value: any) {
@@ -240,12 +259,12 @@ export function Settings() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 bg-surface-900 p-1 rounded-lg border border-surface-700">
+      <div className="flex gap-1 bg-surface-900 p-1 rounded-lg border border-surface-700 overflow-x-auto">
         {tabs.map((tab) => (
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
-            className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-all ${
+            className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium whitespace-nowrap transition-all ${
               activeTab === tab.key
                 ? 'bg-surface-700 text-surface-100'
                 : 'text-surface-400 hover:text-surface-200'
@@ -280,7 +299,7 @@ export function Settings() {
                 key={conn.id}
                 className={`rounded-xl border transition-all ${
                   isEditing
-                    ? 'border-brand-500/40 bg-brand-500/3'
+                    ? 'border-brand-500/40 bg-brand-500/5'
                     : 'border-surface-700 bg-surface-800/20'
                 }`}
               >
@@ -538,9 +557,21 @@ export function Settings() {
                               value={editingData.schedule.cron}
                               onChange={(e) => updateEditingField(['schedule', 'cron'], e.target.value)}
                             />
-                            <p className="text-xs text-surface-500 mt-1">
-                              Format: minute hour day month weekday
-                            </p>
+                            {cronCheck && !cronCheck.valid ? (
+                              <p className="text-xs text-red-400 mt-1.5 flex items-center gap-1.5">
+                                <XCircle size={12} />
+                                {cronCheck.error ?? 'Invalid cron expression'}
+                              </p>
+                            ) : cronCheck?.valid && cronCheck.nextRun ? (
+                              <p className="text-xs text-emerald-400 mt-1.5 flex items-center gap-1.5">
+                                <CheckCircle2 size={12} />
+                                Next run: {new Date(cronCheck.nextRun).toLocaleString('pt-BR')}
+                              </p>
+                            ) : (
+                              <p className="text-xs text-surface-500 mt-1.5">
+                                Format: minute hour day month weekday
+                              </p>
+                            )}
                           </div>
 
                           <div className="flex flex-wrap gap-2">
@@ -564,7 +595,11 @@ export function Settings() {
 
                     {/* Save / Cancel */}
                     <div className="flex gap-2 pt-1">
-                      <button onClick={saveEdit} className="btn-primary text-sm">
+                      <button
+                        onClick={saveEdit}
+                        disabled={editingData.schedule.enabled && cronCheck?.valid === false}
+                        className="btn-primary text-sm"
+                      >
                         Save Connection
                       </button>
                       <button onClick={cancelEdit} className="btn-secondary text-sm">

@@ -36,7 +36,7 @@ export class GCSDestination implements DestinationProvider {
   async list(): Promise<string[]> {
     const bucket = this.storage.bucket(this.bucket)
     const [files] = await bucket.getFiles({ prefix: 'supabase-backups/' })
-    return files.map((f) => f.name).sort().reverse()
+    return files.map((f) => f.name.replace(/^supabase-backups\//, '')).filter(Boolean)
   }
 
   async delete(remoteName: string): Promise<void> {

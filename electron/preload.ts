@@ -115,6 +115,14 @@ export interface ConnectionSchedulerStatus {
   cron: string
   nextRun: string | null
   lastRun: string | null
+  lastStatus: 'success' | 'failed' | null
+  lastError: string | null
+}
+
+export interface CronValidation {
+  valid: boolean
+  error?: string
+  nextRun: string | null
 }
 
 export interface SchedulerStatus {
@@ -189,6 +197,7 @@ export interface ElectronAPI {
   getSchedulerStatus: () => Promise<SchedulerStatus>
   syncScheduler: () => Promise<void>
   stopScheduler: () => Promise<void>
+  validateCron: (expression: string) => Promise<CronValidation>
 
   // Logs
   getLogs: (options: LogQuery) => Promise<LogEntry[]>
@@ -244,6 +253,7 @@ const electronAPI: ElectronAPI = {
   getSchedulerStatus: () => ipcRenderer.invoke('scheduler:status'),
   syncScheduler: () => ipcRenderer.invoke('scheduler:sync'),
   stopScheduler: () => ipcRenderer.invoke('scheduler:stop'),
+  validateCron: (expression) => ipcRenderer.invoke('scheduler:validate-cron', expression),
 
   // Logs
   getLogs: (options) => ipcRenderer.invoke('logs:get', options),

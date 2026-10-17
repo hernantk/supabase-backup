@@ -15,6 +15,10 @@ import type { AppConfig, BackupOptions, BackupProgress, BackupResult } from '../
 let isRunning = false
 let isCancelled = false
 
+export function isBackupRunning(): boolean {
+  return isRunning
+}
+
 export async function runBackup(
   config: AppConfig,
   options: BackupOptions,
@@ -142,19 +146,24 @@ export async function runBackup(
       status: 'success',
     })
 
-    // ── Retention ────────────────────────────────────────────────────────────
+    // Post-backup housekeeping must never turn an already-uploaded backup into a failure.
     if (connection.backup.retention.enabled) {
-      await applyRetention(connection.backup.retention, config.destinations)
+      try {
+        await applyRetention(connection.backup.retention, config.destinations, slug)
+      } catch (err: any) {
+        logger.warn(`Retention cleanup failed for ${backupId}: ${err.message}`)
+      }
     }
 
-    // ── Notification ─────────────────────────────────────────────────────────
     if (config.notifications.enabled && config.notifications.onSuccess) {
-      await sendNotification(config.notifications, result)
+      try {
+        await sendNotification(config.notifications, result)
+      } catch (err: any) {
+        logger.warn(`Notification failed for ${backupId}: ${err.message}`)
+      }
     }
 
-    cleanupTemp(tempDir)
     logger.info(`Backup ${backupId} completed in ${duration}ms`)
-    isRunning = false
     return result
   } catch (error: any) {
     const duration = Date.now() - startTime
@@ -170,20 +179,28 @@ export async function runBackup(
       error: error.message,
     }
 
-    addBackupRecord({
-      ...result,
-      type: options.include,
-      status: 'failed',
-    })
+    try {
+      addBackupRecord({
+        ...result,
+        type: options.include,
+        status: 'failed',
+      })
 
-    if (config.notifications.enabled && config.notifications.onFailure) {
-      await sendNotification(config.notifications, result)
+      if (config.notifications.enabled && config.notifications.onFailure) {
+        await sendNotification(config.notifications, result)
+      }
+    } catch (recordErr: any) {
+      logger.warn(`Could not record failure of ${backupId}: ${recordErr.message}`)
     }
 
     logger.error(`Backup ${backupId} failed: ${error.message}`)
-    cleanupTemp(tempDir)
-    isRunning = false
     throw error
+  } finally {
+    // Always release the lock and temp files, otherwise one bad run blocks every future (scheduled) backup.
+    cleanupTemp(tempDir)
+    cleanupTemp(`${tempDir}.tar.gz`)
+    cleanupTemp(`${tempDir}.tar.gz.enc`)
+    isRunning = false
   }
 }
 
@@ -226,9 +243,7 @@ function getDirectorySize(dirPath: string): number {
 
 function cleanupTemp(dir: string): void {
   try {
-    if (fs.existsSync(dir)) {
-      fs.rmSync(dir, { recursive: true, force: true })
-    }
+    fs.rmSync(dir, { recursive: true, force: true })
   } catch {
     // Ignore cleanup errors
   }

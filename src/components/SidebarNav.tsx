@@ -48,7 +48,7 @@ export function SidebarNav() {
       <div className="p-4 border-t border-surface-800">
         <div className="px-3 py-2 flex flex-col items-center rounded-lg bg-surface-800/50">
           <p className="text-xs text-surface-500">Version</p>
-          <p className="text-sm text-surface-300 font-mono">1.0.0</p>
+          <p className="text-sm text-surface-300 font-mono">{__APP_VERSION__}</p>
         </div>
       </div>
     </aside>

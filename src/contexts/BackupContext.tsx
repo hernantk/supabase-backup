@@ -52,7 +52,8 @@ export function BackupProvider({ children }: { children: ReactNode }) {
   // ── Listen for backup events globally ───────────────────────────────────────
   useEffect(() => {
     const unsubProgress = window.electronAPI.onBackupProgress((p) => {
-      setState((prev) => ({ ...prev, progress: p }))
+      // Also flips isRunning on, so scheduled (main-process) runs show up in the mini progress widget
+      setState((prev) => ({ ...prev, isRunning: true, progress: p }))
     })
 
     const unsubComplete = window.electronAPI.onBackupComplete((result) => {

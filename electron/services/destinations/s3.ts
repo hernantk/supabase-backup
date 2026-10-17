@@ -62,10 +62,8 @@ export class S3Destination implements DestinationProvider {
 
     const response = await this.client.send(command)
     return (response.Contents || [])
-      .map((obj) => obj.Key || '')
+      .map((obj) => (obj.Key || '').replace(/^supabase-backups\//, ''))
       .filter(Boolean)
-      .sort()
-      .reverse()
   }
 
   async delete(remoteName: string): Promise<void> {

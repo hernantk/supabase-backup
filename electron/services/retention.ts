@@ -11,26 +11,42 @@ export interface RetentionConfig {
   keepLast: number
 }
 
+/**
+ * Deletes the oldest backups of ONE connection, keeping the newest `keepLast`.
+ * Only files named `backup_<slug>_<timestamp>.*` are ever touched, so other connections'
+ * backups and unrelated files in the destination are left alone.
+ */
 export async function applyRetention(
   retention: RetentionConfig,
-  destinations: DestinationConfig
+  destinations: DestinationConfig,
+  slug: string
 ): Promise<void> {
   const logger = getLogger()
 
-  if (!retention.enabled || retention.keepLast <= 0) return
+  const keepLast = Math.floor(retention.keepLast)
+  if (!retention.enabled || !Number.isFinite(keepLast) || keepLast < 1) return
 
-  logger.info(`Applying retention policy: keep last ${retention.keepLast} backups`)
+  logger.info(`Applying retention policy for "${slug}": keep last ${keepLast} backups`)
+
+  // Slugs are sanitized to [a-z0-9_-] (see runner.sanitizeName), so they are safe inside a RegExp
+  const pattern = new RegExp(`^backup_${slug}_(\\d+)\\.`)
 
   const providers = getEnabledProviders(destinations)
 
   for (const [name, provider] of providers) {
     try {
-      const files = await provider.list()
-      if (files.length > retention.keepLast) {
-        const toDelete = files.slice(retention.keepLast)
-        for (const file of toDelete) {
+      const backups = (await provider.list())
+        .map((file) => ({ file, match: pattern.exec(file) }))
+        .filter((b): b is { file: string; match: RegExpExecArray } => b.match !== null)
+        .map((b) => ({ file: b.file, time: Number(b.match[1]) }))
+        .sort((a, b) => b.time - a.time) // newest first
+
+      for (const { file } of backups.slice(keepLast)) {
+        try {
           await provider.delete(file)
           logger.info(`Retention: deleted ${file} from ${name}`)
+        } catch (err: any) {
+          logger.error(`Retention: could not delete ${file} from ${name}: ${err.message}`)
         }
       }
     } catch (err: any) {
