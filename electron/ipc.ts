@@ -7,8 +7,9 @@ import {
   cancelBatch,
   cancelAllBackups,
   applyBackupSettings,
+  startRestore,
+  cancelRestores,
 } from './services/backup/backupService'
-import { restoreDatabase, cancelRestore } from './services/backup/restore'
 import { loadConfig, saveConfig } from './services/config'
 import fs from 'fs'
 import { getBackupHistory, deleteBackupRecord } from './services/history'
@@ -18,6 +19,7 @@ import { syncSchedules, stopAllSchedulers, getSchedulerStatus, validateCron } fr
 import { queryLogs } from './services/logger'
 import { applyStartWithSystem } from './services/autostart'
 import { applyAppearance } from './services/appearance'
+import { refreshTrayLanguage } from './services/tray'
 import { registerManagerRoutes } from './ipc/managerRoutes'
 import { checkForUpdates, downloadUpdate, getUpdateState, installUpdate } from './services/updater'
 import {
@@ -36,7 +38,7 @@ import {
   setCustomPgDumpPath,
   getLinuxInstallCommands,
 } from './services/pgDumpInstaller'
-import type { AppConfig, BackupOptions, ImportProjectRequest, LogQuery } from './preload'
+import type { AppConfig, BackupOptions, ImportProjectRequest, LogQuery, RestoreOptions } from './preload'
 
 export function setupIpcHandlers(mainWindow: BrowserWindow | null) {
   registerManagerRoutes()
@@ -81,17 +83,10 @@ export function setupIpcHandlers(mainWindow: BrowserWindow | null) {
   )
 
   // ── Restore ──────────────────────────────────────────────────────────────────
-  ipcMain.handle('restore:run', async (_event, connectionId: string, filePath: string) => {
-    const config = loadConfig()
-    const connection = config.connections.find((c) => c.id === connectionId)
-    if (!connection) throw new Error(`Connection not found: "${connectionId}"`)
-    return restoreDatabase(connection.supabase, filePath, (progress) => {
-      mainWindow?.webContents.send('restore:progress', progress)
-    })
-  })
+  ipcMain.handle('restore:run', async (_event, options: RestoreOptions) => startRestore(options).promise)
 
   ipcMain.handle('restore:cancel', async () => {
-    return cancelRestore()
+    cancelRestores()
   })
 
   // ── Shell ────────────────────────────────────────────────────────────────────
@@ -121,6 +116,7 @@ export function setupIpcHandlers(mainWindow: BrowserWindow | null) {
     applyBackupSettings(config)
     applyStartWithSystem(config.settings.startWithSystem)
     applyAppearance(config.settings.appearance)
+    refreshTrayLanguage()
     // Automatically reconcile all scheduled tasks whenever config is saved
     syncSchedules(config)
   })
@@ -173,6 +169,17 @@ export function setupIpcHandlers(mainWindow: BrowserWindow | null) {
     })
     if (result.canceled) return null
     return result.filePaths[0]
+  })
+
+  ipcMain.handle('dialog:browse-backup', async () => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      filters: [
+        { name: 'Backups', extensions: ['sql', 'gz', 'tgz', 'enc'] },
+        { name: 'All files', extensions: ['*'] },
+      ],
+    })
+    return result.canceled ? null : result.filePaths[0]
   })
 
   ipcMain.handle('dialog:browse-file', async () => {

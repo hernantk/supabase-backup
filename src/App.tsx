@@ -17,6 +17,7 @@ import { Logs } from './pages/Logs'
 import { ProjectWorkspace } from './pages/project/ProjectWorkspace'
 import { Overview } from './pages/project/Overview'
 import { SqlEditor } from './pages/project/SqlEditor'
+import { TableEditor } from './pages/project/TableEditor'
 import { AuthUsers } from './pages/project/AuthUsers'
 import { StorageBrowser } from './pages/project/StorageBrowser'
 import { ProjectBackups } from './pages/project/ProjectBackups'
@@ -45,6 +46,7 @@ function Shell() {
               <Route path="/p/:id" element={<ProjectWorkspace />}>
                 <Route index element={<Overview />} />
                 <Route path="sql" element={<SqlEditor />} />
+                <Route path="tables" element={<TableEditor />} />
                 <Route path="auth" element={<AuthUsers />} />
                 <Route path="storage" element={<StorageBrowser />} />
                 <Route path="backups" element={<ProjectBackups />} />

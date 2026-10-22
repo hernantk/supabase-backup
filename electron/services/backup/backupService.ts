@@ -1,9 +1,11 @@
 import { randomUUID } from 'crypto'
-import { JobQueue, type JobHandle, type JobInfo } from '../../core/jobQueue'
+import { JobQueue, type BatchSummary, type JobHandle, type JobInfo } from '../../core/jobQueue'
 import { runBackup } from './runner'
+import { restoreBackup } from './restore'
 import { loadConfig } from '../config'
 import { getLogger } from '../logger'
 import { emitToRenderer } from '../windowBus'
+import { notifyBackupResult, notifyBatch } from '../notify'
 import type {
   AppConfig,
   BackupOptions,
@@ -11,9 +13,15 @@ import type {
   BackupResult,
   BatchStartResult,
   ConnectionConfig,
+  RestoreOptions,
+  RestoreResult,
 } from '../../preload'
 
 export const BACKUP_JOB_KIND = 'backup'
+
+/** Outcomes of the jobs of a running batch, kept until the batch ends and one summary is sent. */
+const batchResults = new Map<string, { name: string; ok: boolean; error?: string }[]>()
+export const RESTORE_JOB_KIND = 'restore'
 
 let activityListener: ((running: number, queued: number) => void) | undefined
 
@@ -26,6 +34,7 @@ const queue = new JobQueue<BackupProgress>({
   concurrency: 2,
   onEvent: (event) => {
     emitToRenderer('jobs:event', event)
+    if (event.type === 'batch') void finishBatch(event.summary)
     if (event.type === 'job' && activityListener) {
       const jobs = queue.list()
       activityListener(
@@ -111,9 +120,13 @@ export function startBackup(
           )
           const withJob = { ...result, jobId }
           emitToRenderer('backup:complete', withJob)
+          announce(extra.batchId, fresh, withJob)
           return withJob
         } catch (err: any) {
-          emitToRenderer('backup:complete', failedResult(jobId, current, err, signal.aborted))
+          const failed = failedResult(jobId, current, err, signal.aborted)
+          emitToRenderer('backup:complete', failed)
+          // A cancelled backup is the user's own doing; it does not deserve a notification.
+          if (!signal.aborted) announce(extra.batchId, fresh, failed)
           throw err
         }
       },
@@ -176,4 +189,58 @@ function enabledDestinations(config: AppConfig): string[] {
   if (config.destinations.gcs.enabled) destinations.push('gcs')
   if (config.destinations.azure.enabled) destinations.push('azure')
   return destinations
+}
+
+/**
+ * Queues a restore. It shares the per-project lock with backups, so a restore never overlaps a backup
+ * of the same project. Progress goes straight to the renderer on its own channel.
+ */
+export function startRestore(options: RestoreOptions): JobHandle<RestoreResult> {
+  const connection = loadConfig().connections.find((c) => c.id === options.connectionId)
+  if (!connection) throw new Error('The target project no longer exists.')
+
+  return queue.enqueue<RestoreResult>({
+    key: connection.id,
+    kind: RESTORE_JOB_KIND,
+    label: `${connection.name} (restore)`,
+    run: ({ signal }) =>
+      restoreBackup(loadConfig().connections.find((c) => c.id === connection.id) ?? connection, options, (p) => emitToRenderer('restore:progress', p), signal),
+  })
+}
+
+export function cancelRestores(): number {
+  let count = 0
+  for (const job of queue.list()) {
+    if (job.kind === RESTORE_JOB_KIND && (job.state === 'queued' || job.state === 'running') && queue.cancel(job.id)) count++
+  }
+  return count
+}
+
+// ─── Notifications ────────────────────────────────────────────────────────────
+
+/** Single backups announce themselves; members of a batch wait for the batch summary. */
+function announce(batchId: string | undefined, config: AppConfig, result: BackupResult): void {
+  if (batchId) {
+    const list = batchResults.get(batchId) ?? []
+    list.push({ name: result.connectionName, ok: result.success, error: result.error })
+    batchResults.set(batchId, list)
+    return
+  }
+  void notifyBackupResult(config.notifications, result).catch((err) => getLogger().warn(`Notification failed: ${err.message}`))
+}
+
+async function finishBatch(summary: BatchSummary): Promise<void> {
+  const results = batchResults.get(summary.batchId) ?? []
+  batchResults.delete(summary.batchId)
+  try {
+    await notifyBatch(loadConfig().notifications, {
+      total: summary.total,
+      succeeded: summary.succeeded,
+      failed: summary.failed,
+      cancelled: summary.cancelled,
+      failures: results.filter((r) => !r.ok).map((r) => ({ name: r.name, error: r.error ?? '' })),
+    })
+  } catch (err: any) {
+    getLogger().warn(`Batch notification failed: ${err.message}`)
+  }
 }

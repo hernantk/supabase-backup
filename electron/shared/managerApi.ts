@@ -3,10 +3,10 @@
  * Types only: the renderer imports this file with `import type`, the main process validates every
  * payload with zod (see electron/ipc/managerRoutes.ts) before it reaches a service.
  */
-import type { CellValue, RowFilter } from '../core/sqlBuilder'
+import type { CellValue, FilterOp, RowFilter } from '../core/sqlBuilder'
 import type { SqlKind } from '../core/sqlClassify'
 
-export type { CellValue, RowFilter, SqlKind }
+export type { CellValue, FilterOp, RowFilter, SqlKind }
 
 // ─── Projects ─────────────────────────────────────────────────────────────────
 

@@ -43,6 +43,8 @@ export function JobsProvider({ children }: { children: ReactNode }) {
   const [byId, setById] = useState<Record<string, JobView>>({})
 
   const upsert = useCallback((job: JobInfo, patch: Partial<JobView> = {}) => {
+    // Restores share the queue's locks but have their own screen.
+    if (job.kind !== 'backup') return
     setById((prev) => ({ ...prev, [job.id]: { ...prev[job.id], ...job, ...patch } }))
   }, [])
 
@@ -55,7 +57,7 @@ export function JobsProvider({ children }: { children: ReactNode }) {
         // Events that arrived before this snapshot are newer, so existing entries win.
         setById((prev) => {
           const next = { ...prev }
-          for (const job of jobs) next[job.id] = { ...job, ...prev[job.id] }
+          for (const job of jobs) if (job.kind === 'backup') next[job.id] = { ...job, ...prev[job.id] }
           return next
         })
       })

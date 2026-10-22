@@ -206,9 +206,27 @@ export interface SchedulerStatus {
 // ─── Restore types ────────────────────────────────────────────────────────────
 
 export interface RestoreProgress {
-  stage: 'preparing' | 'restoring' | 'done'
+  stage: 'preparing' | 'database' | 'storage' | 'done'
   progress: number
   message: string
+}
+
+export interface RestoreOptions {
+  /** Any registered project, not necessarily the one the backup came from. */
+  connectionId: string
+  filePath: string
+  scope: ('database' | 'storage')[]
+  /** Password of an encrypted (.enc) backup. */
+  password?: string
+  /** The target project's name, typed by the user. */
+  confirmName: string
+}
+
+export interface RestoreResult {
+  database: boolean
+  storageFiles: number
+  storageBuckets: number
+  warnings: string[]
 }
 
 // ─── Log types ────────────────────────────────────────────────────────────────
@@ -309,6 +327,7 @@ export interface ElectronAPI {
   testDestination: (type: string, config: any) => Promise<{ success: boolean; message: string }>
   browseFolder: () => Promise<string | null>
   browseFile: () => Promise<string | null>
+  browseBackupFile: () => Promise<string | null>
 
   // pg_dump installer
   detectPgDump: () => Promise<PgDumpInfo>
@@ -319,7 +338,7 @@ export interface ElectronAPI {
   installPgDumpViaWinget: () => Promise<void>
 
   // Restore
-  restoreDatabase: (connectionId: string, filePath: string) => Promise<void>
+  restoreBackup: (options: RestoreOptions) => Promise<RestoreResult>
   cancelRestore: () => Promise<void>
 
   // Shell
@@ -397,6 +416,7 @@ const electronAPI: ElectronAPI = {
   testDestination: (type, config) => ipcRenderer.invoke('destination:test', type, config),
   browseFolder: () => ipcRenderer.invoke('dialog:browse-folder'),
   browseFile: () => ipcRenderer.invoke('dialog:browse-file'),
+  browseBackupFile: () => ipcRenderer.invoke('dialog:browse-backup'),
 
   // pg_dump installer
   detectPgDump: () => ipcRenderer.invoke('pgdump:detect'),
@@ -407,7 +427,7 @@ const electronAPI: ElectronAPI = {
   installPgDumpViaWinget: () => ipcRenderer.invoke('pgdump:install-winget'),
 
   // Restore
-  restoreDatabase: (connectionId, filePath) => ipcRenderer.invoke('restore:run', connectionId, filePath),
+  restoreBackup: (options) => ipcRenderer.invoke('restore:run', options),
   cancelRestore: () => ipcRenderer.invoke('restore:cancel'),
 
   // Shell

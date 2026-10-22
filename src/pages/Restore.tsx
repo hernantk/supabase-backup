@@ -1,394 +1,330 @@
-import { useState, useEffect, useRef } from 'react'
-import {
-  RotateCcw,
-  FolderOpen,
-  ShieldAlert,
-  CheckCircle2,
-  XCircle,
-  Loader2,
-  TriangleAlert,
-  StopCircle,
-  Server,
-  ChevronDown,
-  FileText,
-} from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useLocation } from 'react-router-dom'
+import { CheckCircle2, FileText, FolderOpen, Loader2, RotateCcw, ShieldAlert, StopCircle, TriangleAlert } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
+import { useConfig, useHistory } from '../hooks/useConfig'
 import { ProgressBar } from '../components/ProgressBar'
+import { CenteredSpinner, ConfirmSheet, EmptyState, Notice, PageHeader, Section, Switch } from '../components/ui'
+import { formatBytes, formatRelative } from '../lib/format'
+import { cleanError } from '../lib/api'
+import type { RestoreProgress, RestoreResult } from '../../electron/preload'
 
-// ── Types ─────────────────────────────────────────────────────────────────────
-
-interface ConnectionConfig {
-  id: string
-  name: string
-  supabase: { url: string; serviceRoleKey: string; dbUrl: string }
-}
-
-interface RestoreProgress {
-  stage: 'preparing' | 'restoring' | 'done'
-  progress: number
-  message: string
-}
-
-type Screen = 'setup' | 'confirm' | 'running' | 'complete' | 'error'
-
-// ── Component ─────────────────────────────────────────────────────────────────
+type Screen = 'setup' | 'running' | 'done' | 'error'
 
 export function Restore() {
-  const [connections, setConnections] = useState<ConnectionConfig[]>([])
-  const [selectedConnectionId, setSelectedConnectionId] = useState('')
-  const [filePath, setFilePath] = useState('')
+  const { t } = useTranslation()
+  const location = useLocation()
+  const preset = (location.state ?? {}) as { filePath?: string; connectionId?: string }
+  const { data: config } = useConfig()
+  const { data: history } = useHistory()
+
+  const [filePath, setFilePath] = useState(preset.filePath ?? '')
+  const [sourceConnectionId, setSourceConnectionId] = useState<string | undefined>(preset.connectionId)
+  const [targetId, setTargetId] = useState(preset.connectionId ?? '')
+  const [password, setPassword] = useState('')
+  const [scope, setScope] = useState<{ database: boolean; storage: boolean }>({ database: true, storage: true })
+  const [confirming, setConfirming] = useState(false)
   const [screen, setScreen] = useState<Screen>('setup')
   const [progress, setProgress] = useState<RestoreProgress | null>(null)
   const [logs, setLogs] = useState<string[]>([])
+  const [result, setResult] = useState<RestoreResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const logsRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-    loadConnections()
-
-    const unsub = window.electronAPI.onRestoreProgress((p) => {
-      setProgress(p)
-      setLogs((prev) => {
-        const line = `[${p.stage.toUpperCase()}] ${p.message}`
-        return prev[prev.length - 1] === line ? prev : [...prev, line]
-      })
-    })
-
-    return () => unsub()
-  }, [])
+  useEffect(
+    () =>
+      window.electronAPI.onRestoreProgress((p) => {
+        setProgress(p)
+        setLogs((prev) => {
+          const line = `[${p.stage.toUpperCase()}] ${p.message}`
+          return prev[prev.length - 1] === line ? prev : [...prev.slice(-300), line]
+        })
+      }),
+    []
+  )
 
   useEffect(() => {
-    if (logsRef.current) {
-      logsRef.current.scrollTop = logsRef.current.scrollHeight
-    }
+    if (logsRef.current) logsRef.current.scrollTop = logsRef.current.scrollHeight
   }, [logs])
 
-  async function loadConnections() {
-    const cfg = await window.electronAPI.getConfig()
-    setConnections(cfg.connections as any)
-    if (cfg.connections.length > 0) {
-      setSelectedConnectionId(cfg.connections[0].id)
+  const connections = config?.connections ?? []
+  const target = connections.find((c) => c.id === targetId) ?? connections[0]
+  const effectiveTargetId = target?.id ?? ''
+
+  const isSql = filePath.endsWith('.sql')
+  const isEncrypted = filePath.endsWith('.enc')
+  const dbAccess = !!target?.supabase.dbUrl?.trim()
+  const storageAccess = !!target?.supabase.url && !!target?.supabase.serviceRoleKey
+
+  const recent = useMemo(() => (history ?? []).filter((r) => r.status === 'success' && r.localPath).slice(0, 6), [history])
+
+  if (!config) return <CenteredSpinner />
+
+  const wantsDatabase = scope.database && dbAccess
+  const wantsStorage = scope.storage && storageAccess && !isSql
+  const canStart = !!filePath && !!target && (wantsDatabase || wantsStorage) && (!isEncrypted || password.length > 0)
+
+  async function browse() {
+    const picked = await window.electronAPI.browseBackupFile()
+    if (picked) {
+      setFilePath(picked)
+      setSourceConnectionId(undefined)
     }
   }
 
-  const selectedConnection = connections.find((c) => c.id === selectedConnectionId)
-
-  // ── Handlers ─────────────────────────────────────────────────────────────────
-
-  async function handleBrowse() {
-    const picked = await window.electronAPI.browseFile()
-    if (picked) setFilePath(picked)
-  }
-
-  function handleStartRestore() {
-    if (!selectedConnectionId || !filePath) return
-    setScreen('confirm')
-  }
-
-  async function handleConfirmRestore() {
+  async function start() {
+    if (!target) return
     setScreen('running')
     setLogs([])
     setProgress(null)
     setError(null)
-
     try {
-      await window.electronAPI.restoreDatabase(selectedConnectionId, filePath)
-      setScreen('complete')
-    } catch (err: any) {
-      setError(err.message ?? 'Restore failed')
+      const res = await window.electronAPI.restoreBackup({
+        connectionId: target.id,
+        filePath,
+        scope: [...(wantsDatabase ? (['database'] as const) : []), ...(wantsStorage ? (['storage'] as const) : [])],
+        password: isEncrypted ? password : undefined,
+        confirmName: target.name,
+      })
+      setResult(res)
+      setScreen('done')
+    } catch (err) {
+      const message = cleanError(err)
+      setError(message.includes('cancelled') ? t('restore.cancelled') : message)
       setScreen('error')
     }
   }
 
-  async function handleCancel() {
-    await window.electronAPI.cancelRestore()
-    setError('Restore cancelled by user')
-    setScreen('error')
-  }
-
   function reset() {
     setScreen('setup')
-    setFilePath('')
     setProgress(null)
     setLogs([])
+    setResult(null)
     setError(null)
   }
 
-  // ── Screens ───────────────────────────────────────────────────────────────────
-
-  // Confirmation / warning modal overlay
-  if (screen === 'confirm') {
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-        <div className="bg-surface-900 border border-red-500/30 rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
-          {/* Red header band */}
-          <div className="bg-red-500/10 border-b border-red-500/20 px-6 py-5 flex items-center gap-3">
-            <div className="p-2 rounded-full bg-red-500/15">
-              <ShieldAlert size={22} className="text-red-400" />
-            </div>
-            <div>
-              <h2 className="text-base font-semibold text-red-300">Destructive Operation</h2>
-              <p className="text-xs text-red-400/70">This action cannot be undone</p>
-            </div>
-          </div>
-
-          {/* Body */}
-          <div className="px-6 py-5 space-y-4">
-            <p className="text-sm text-surface-300 leading-relaxed">
-              Restoring this backup will <span className="text-red-400 font-semibold">overwrite all existing data</span> in the database:
-            </p>
-
-            {/* Connection info box */}
-            <div className="bg-surface-800 border border-surface-700 rounded-lg px-4 py-3 space-y-1.5">
-              <div className="flex justify-between text-sm">
-                <span className="text-surface-500">Connection</span>
-                <span className="text-surface-200 font-medium">{selectedConnection?.name}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-surface-500">Database URL</span>
-                <span className="text-surface-400 font-mono text-xs truncate max-w-[200px]">
-                  {selectedConnection?.supabase.dbUrl?.replace(/:[^:@]*@/, ':***@') ?? '—'}
-                </span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-surface-500">Backup file</span>
-                <span className="text-surface-400 text-xs truncate max-w-[200px]">
-                  {filePath.split(/[\\/]/).pop()}
-                </span>
-              </div>
-            </div>
-
-            {/* Warning list */}
-            <ul className="space-y-1.5 text-sm text-surface-400">
-              {[
-                'All tables and views will be dropped and recreated',
-                'All existing rows will be permanently deleted',
-                'This operation is irreversible',
-              ].map((item) => (
-                <li key={item} className="flex items-start gap-2">
-                  <TriangleAlert size={13} className="text-amber-500 mt-0.5 shrink-0" />
-                  {item}
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          {/* Actions */}
-          <div className="px-6 py-4 bg-surface-800/50 border-t border-surface-700 flex gap-3 justify-end">
-            <button
-              onClick={() => setScreen('setup')}
-              className="btn-secondary"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleConfirmRestore}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white text-sm font-medium transition-colors"
-            >
-              <ShieldAlert size={14} />
-              Yes, overwrite and restore
-            </button>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  // Running screen
+  // ── Running ──────────────────────────────────────────────────────────────────
   if (screen === 'running') {
-    const stageLabel = progress?.stage === 'preparing'
-      ? 'Preparing'
-      : progress?.stage === 'restoring'
-      ? 'Restoring database'
-      : 'Finalizing'
-
     return (
-      <div className="flex flex-col h-full min-h-0">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-surface-700 shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-amber-500/20 flex items-center justify-center">
-              <Loader2 size={18} className="text-amber-400 animate-spin" />
-            </div>
-            <div>
-              <h1 className="text-base font-semibold text-surface-100">Restore in progress</h1>
-              <p className="text-xs text-surface-400">{selectedConnection?.name}</p>
-            </div>
+      <div className="space-y-6 max-w-3xl">
+        <PageHeader
+          title={t('restore.running')}
+          subtitle={target?.name}
+          actions={
+            <button className="btn-danger" onClick={() => window.electronAPI.cancelRestore()}>
+              <StopCircle size={14} />
+              {t('common.cancel')}
+            </button>
+          }
+        />
+        <div className="list-group px-5 py-4 space-y-3">
+          <div className="flex items-center justify-between text-[13px]">
+            <span className="inline-flex items-center gap-2 font-medium text-surface-100">
+              <Loader2 size={14} className="animate-spin text-brand-400" />
+              {t(`restore.stages.${progress?.stage ?? 'preparing'}`)}
+            </span>
+            <span className="font-mono text-surface-400">{progress?.progress ?? 0}%</span>
           </div>
-          <button onClick={handleCancel} className="btn-danger flex items-center gap-2 text-sm">
-            <StopCircle size={15} />
-            Cancel
-          </button>
+          <ProgressBar progress={progress?.progress ?? 0} label={progress?.message} showPercentage={false} />
         </div>
-
-        {/* Progress */}
-        <div className="px-6 py-5 space-y-3 shrink-0 border-b border-surface-700">
-          <div className="flex items-center justify-between text-xs text-surface-400 mb-1">
-            <span className="font-medium text-surface-200">{stageLabel}</span>
-            <span className="font-mono">{progress?.progress ?? 0}%</span>
-          </div>
-          <ProgressBar
-            progress={progress?.progress ?? 0}
-            label={progress?.message ?? 'Starting...'}
-            showPercentage={false}
-          />
-        </div>
-
-        {/* Live log */}
-        <div className="flex-1 px-6 pb-6 pt-4 min-h-0 flex flex-col">
-          <p className="text-xs font-medium text-surface-400 mb-2 shrink-0">Live output</p>
-          <div
-            ref={logsRef}
-            className="flex-1 min-h-0 bg-surface-950 rounded-lg p-4 overflow-y-auto font-mono text-xs leading-relaxed"
-          >
+        <Section title={t('restore.liveOutput')}>
+          <div ref={logsRef} className="max-h-72 overflow-y-auto rounded-xl bg-surface-900 border border-surface-700/70 p-4 font-mono text-[12px] leading-relaxed">
             {logs.length === 0 ? (
-              <p className="text-surface-600">Waiting for output...</p>
+              <p className="text-surface-500">{t('restore.waiting')}</p>
             ) : (
               logs.map((line, i) => (
-                <div key={i} className="text-surface-400 py-0.5">
-                  <span className="text-surface-600 select-none mr-2">{String(i + 1).padStart(3, '0')}</span>
-                  {line}
-                </div>
+                <div key={i} className="text-surface-300 py-0.5 break-all">{line}</div>
               ))
             )}
           </div>
-        </div>
+        </Section>
       </div>
     )
   }
 
-  // Complete screen
-  if (screen === 'complete') {
+  // ── Done / error ─────────────────────────────────────────────────────────────
+  if (screen === 'done' || screen === 'error') {
     return (
-      <div className="flex flex-col items-center justify-center h-full gap-6 max-w-md mx-auto text-center px-6">
-        <div className="w-20 h-20 rounded-full bg-emerald-500/10 flex items-center justify-center">
-          <CheckCircle2 size={40} className="text-emerald-400" />
-        </div>
-        <div>
-          <h2 className="text-2xl font-bold text-surface-50 mb-2">Restore Complete</h2>
-          <p className="text-surface-400 text-sm">
-            The database was restored successfully to <span className="text-surface-200">{selectedConnection?.name}</span>.
-          </p>
-        </div>
-        <button onClick={reset} className="btn-secondary flex items-center gap-2">
-          <RotateCcw size={15} />
-          Restore Another
-        </button>
-      </div>
-    )
-  }
-
-  // Error screen
-  if (screen === 'error') {
-    return (
-      <div className="flex flex-col items-center justify-center h-full gap-6 max-w-md mx-auto text-center px-6">
-        <div className="w-20 h-20 rounded-full bg-red-500/10 flex items-center justify-center">
-          <XCircle size={40} className="text-red-400" />
-        </div>
-        <div>
-          <h2 className="text-2xl font-bold text-surface-50 mb-2">Restore Failed</h2>
-          <p className="text-sm text-red-400/80 break-words">{error}</p>
-        </div>
-        <button onClick={reset} className="btn-secondary flex items-center gap-2">
-          <RotateCcw size={15} />
-          Try Again
-        </button>
-      </div>
-    )
-  }
-
-  // ── Setup screen ──────────────────────────────────────────────────────────────
-  const canStart = !!selectedConnectionId && !!filePath
-
-  return (
-    <div className="space-y-5 max-w-3xl">
-      {/* Title */}
-      <div>
-        <h1 className="page-title">Restore Database</h1>
-        <p className="text-surface-400 mt-1">Restore a PostgreSQL backup to an existing connection</p>
-      </div>
-
-      {/* Warning banner */}
-      <div className="flex items-start gap-3 px-4 py-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
-        <TriangleAlert size={16} className="text-amber-400 mt-0.5 shrink-0" />
-        <p className="text-sm text-amber-300/90">
-          Restore will <strong>drop and recreate all database objects</strong>. All existing data will be permanently replaced by the backup.
-        </p>
-      </div>
-
-      {/* Connection selector */}
-      <div className="card space-y-3">
-        <h3 className="font-medium text-surface-200 flex items-center gap-2">
-          <Server size={16} className="text-surface-400" />
-          Target Connection
-        </h3>
-
-        {connections.length === 0 ? (
-          <p className="text-sm text-amber-400">
-            No connections configured. Go to Settings → Connections first.
-          </p>
-        ) : connections.length === 1 ? (
-          <div className="flex items-center gap-3 p-3 rounded-lg bg-surface-800/50 border border-surface-700">
-            <div className="w-2 h-2 rounded-full bg-brand-400 shrink-0" />
-            <div className="min-w-0">
-              <p className="text-sm font-medium text-surface-200 truncate">{selectedConnection?.name}</p>
-              <p className="text-xs text-surface-500 truncate">{selectedConnection?.supabase.url || 'URL not configured'}</p>
+      <div className="space-y-6 max-w-3xl">
+        <PageHeader title={screen === 'done' ? t('restore.complete') : t('restore.failed')} subtitle={screen === 'done' ? t('restore.completeBody', { name: target?.name }) : undefined} />
+        {screen === 'done' && result ? (
+          <div className="space-y-4">
+            <div className="list-group">
+              {result.database && (
+                <div className="list-row">
+                  <CheckCircle2 size={16} className="text-emerald-400" />
+                  <span className="text-[14px] text-surface-100">{t('restore.resultDatabase')}</span>
+                </div>
+              )}
+              {result.storageBuckets > 0 && (
+                <div className="list-row">
+                  <CheckCircle2 size={16} className="text-emerald-400" />
+                  <span className="text-[14px] text-surface-100">
+                    {t('restore.resultStorage', { count: result.storageFiles, buckets: result.storageBuckets })}
+                  </span>
+                </div>
+              )}
             </div>
+            {result.warnings.length > 0 && (
+              <Notice tone="warning">
+                <p className="font-medium">{t('restore.warnings')}</p>
+                <ul className="list-disc pl-5 mt-1 space-y-0.5 max-h-40 overflow-y-auto">
+                  {result.warnings.slice(0, 50).map((w) => (
+                    <li key={w}>{w}</li>
+                  ))}
+                </ul>
+              </Notice>
+            )}
           </div>
         ) : (
-          <div className="relative">
-            <select
-              value={selectedConnectionId}
-              onChange={(e) => setSelectedConnectionId(e.target.value)}
-              className="input w-full appearance-none pr-8 cursor-pointer"
-            >
-              {connections.map((conn) => (
-                <option key={conn.id} value={conn.id}>{conn.name}</option>
+          error && <Notice tone="error">{error}</Notice>
+        )}
+        <button className="btn-secondary" onClick={reset}>
+          <RotateCcw size={14} />
+          {screen === 'done' ? t('restore.another') : t('common.retry')}
+        </button>
+      </div>
+    )
+  }
+
+  // ── Setup ────────────────────────────────────────────────────────────────────
+  return (
+    <div className="space-y-7 max-w-3xl">
+      <PageHeader title={t('restore.title')} subtitle={t('restore.subtitle')} />
+      <Notice tone="warning">{t('restore.warning')}</Notice>
+
+      <Section title={t('restore.source')} footer={t('restore.sourceHint')}>
+        <div className="list-group">
+          <div className="list-row">
+            <FileText size={16} className="text-surface-400 shrink-0" />
+            <span className={`flex-1 min-w-0 truncate text-[13.5px] ${filePath ? 'text-surface-100 font-mono' : 'text-surface-500'}`} title={filePath}>
+              {filePath || t('restore.noFile')}
+            </span>
+            <button className="btn-secondary" onClick={browse}>
+              <FolderOpen size={14} />
+              {t('restore.browse')}
+            </button>
+          </div>
+          {isEncrypted && (
+            <div className="list-row">
+              <span className="flex-1 min-w-0">
+                <span className="block text-[14px] text-surface-100">{t('restore.password')}</span>
+                <span className="block text-[12.5px] text-surface-500">{t('restore.passwordHint')}</span>
+              </span>
+              <input className="input !w-56" type="password" autoComplete="off" value={password} onChange={(e) => setPassword(e.target.value)} />
+            </div>
+          )}
+        </div>
+
+        <div className="mt-4">
+          <p className="text-[12.5px] font-medium text-surface-500 px-1 mb-1.5">{t('restore.recent')}</p>
+          {recent.length === 0 ? (
+            <p className="px-1 text-[13px] text-surface-500">{t('restore.recentEmpty')}</p>
+          ) : (
+            <ul className="list-group">
+              {recent.map((r) => (
+                <li key={r.id}>
+                  <button
+                    className={`list-row w-full text-left !min-h-[48px] ${filePath === r.localPath ? 'bg-brand-500/10' : 'hover:bg-surface-800/50'}`}
+                    onClick={() => {
+                      setFilePath(r.localPath!)
+                      setSourceConnectionId(r.connectionId)
+                      if (r.connectionId && connections.some((c) => c.id === r.connectionId)) setTargetId(r.connectionId)
+                    }}
+                  >
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-[14px] text-surface-100 truncate">{r.connectionName ?? '—'}</span>
+                      <span className="block text-[12.5px] text-surface-500 truncate">{formatRelative(r.timestamp)} · {formatBytes(r.size)}</span>
+                    </span>
+                  </button>
+                </li>
               ))}
-            </select>
-            <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-surface-400 pointer-events-none" />
+            </ul>
+          )}
+        </div>
+      </Section>
+
+      <Section title={t('restore.target')} footer={t('restore.targetHint')}>
+        {connections.length === 0 ? (
+          <EmptyState icon={ShieldAlert} title={t('restore.noProjects')} />
+        ) : (
+          <div className="list-group">
+            <div className="list-row">
+              <select className="input" value={effectiveTargetId} onChange={(e) => setTargetId(e.target.value)}>
+                {connections.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}{c.projectRef ? ` · ${c.projectRef}` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {sourceConnectionId && target && (
+              <div className="px-4 py-2.5 text-[12.5px] text-surface-400">
+                {sourceConnectionId === target.id ? t('restore.sameProject') : t('restore.otherProject')}
+              </div>
+            )}
           </div>
         )}
-      </div>
+      </Section>
 
-      {/* File selector */}
-      <div className="card space-y-3">
-        <h3 className="font-medium text-surface-200 flex items-center gap-2">
-          <FileText size={16} className="text-surface-400" />
-          Backup File
-        </h3>
-        <p className="text-xs text-surface-500">
-          Accepts plain SQL dumps (<code>.sql</code>) or compressed archives (<code>.tar.gz</code>) produced by this app.
-        </p>
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={filePath}
-            readOnly
-            placeholder="No file selected..."
-            className="input flex-1 text-sm text-surface-300 cursor-default"
-          />
-          <button onClick={handleBrowse} className="btn-secondary flex items-center gap-2 shrink-0">
-            <FolderOpen size={15} />
-            Browse
-          </button>
+      <Section title={t('restore.scope')}>
+        <div className="list-group">
+          <label className={`list-row ${dbAccess ? 'cursor-pointer' : 'opacity-60'}`}>
+            <span className="flex-1 min-w-0">
+              <span className="block text-[14px] text-surface-100">{t('restore.scopeDatabase')}</span>
+              <span className="block text-[12.5px] text-surface-500">{dbAccess ? t('restore.scopeDatabaseHint') : t('restore.noDatabaseAccess')}</span>
+            </span>
+            <Switch label={t('restore.scopeDatabase')} checked={scope.database && dbAccess} disabled={!dbAccess} onChange={(database) => setScope({ ...scope, database })} />
+          </label>
+          <label className={`list-row ${storageAccess && !isSql ? 'cursor-pointer' : 'opacity-60'}`}>
+            <span className="flex-1 min-w-0">
+              <span className="block text-[14px] text-surface-100">{t('restore.scopeStorage')}</span>
+              <span className="block text-[12.5px] text-surface-500">
+                {isSql ? t('restore.sqlOnly') : storageAccess ? t('restore.scopeStorageHint') : t('restore.noStorageAccess')}
+              </span>
+            </span>
+            <Switch
+              label={t('restore.scopeStorage')}
+              checked={scope.storage && storageAccess && !isSql}
+              disabled={!storageAccess || isSql}
+              onChange={(storage) => setScope({ ...scope, storage })}
+            />
+          </label>
         </div>
-        {filePath && (
-          <p className="text-xs text-surface-500 font-mono truncate">{filePath}</p>
-        )}
+      </Section>
+
+      <div className="flex justify-end">
+        <button className="btn-danger" disabled={!canStart} onClick={() => setConfirming(true)}>
+          <ShieldAlert size={15} />
+          {target ? t('restore.startInto', { name: target.name }) : t('restore.start')}
+        </button>
       </div>
 
-      {/* Start button */}
-      <button
-        onClick={handleStartRestore}
-        disabled={!canStart}
-        className="flex items-center justify-center gap-2 w-full px-4 py-3 rounded-lg bg-red-600 hover:bg-red-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-base font-medium transition-colors"
-      >
-        <ShieldAlert size={18} />
-        Restore Database
-        {selectedConnection && (
-          <span className="text-red-300 text-sm font-normal">— {selectedConnection.name}</span>
-        )}
-      </button>
+      {target && (
+        <ConfirmSheet
+          open={confirming}
+          onOpenChange={setConfirming}
+          title={t('restore.confirm.title', { name: target.name })}
+          description={
+            <div className="space-y-2">
+              <p>{t('restore.confirm.body')}</p>
+              <ul className="space-y-1">
+                {wantsDatabase && (
+                  <li className="flex items-start gap-2"><TriangleAlert size={14} className="text-amber-400 mt-0.5 shrink-0" />{t('restore.confirm.db')}</li>
+                )}
+                {wantsStorage && (
+                  <li className="flex items-start gap-2"><TriangleAlert size={14} className="text-amber-400 mt-0.5 shrink-0" />{t('restore.confirm.storage')}</li>
+                )}
+              </ul>
+            </div>
+          }
+          actionLabel={t('restore.confirm.action')}
+          confirmText={target.name}
+          onConfirm={() => {
+            void start()
+          }}
+        />
+      )}
     </div>
   )
 }

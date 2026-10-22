@@ -14,6 +14,8 @@ import {
 import { applyStartWithSystem, HIDDEN_FLAG } from './services/autostart'
 import { checkForUpdates } from './services/updater'
 import { createTray, destroyTray, hasTray, setTrayActivity } from './services/tray'
+import { mainLanguage, setNotificationClickHandler } from './services/notify'
+import { translate } from './core/mainMessages'
 import { applyAppearance, canvasColor, overlayColors, watchTheme } from './services/appearance'
 
 let mainWindow: BrowserWindow | null = null
@@ -86,13 +88,14 @@ function showWindow() {
 async function requestQuit() {
   const active = listJobs().filter((j) => j.state === 'running' || j.state === 'queued')
   if (active.length > 0) {
+    const lang = mainLanguage()
     const { response } = await dialog.showMessageBox({
       type: 'warning',
-      buttons: ['Cancel backups and quit', 'Keep running'],
+      buttons: [translate(lang, 'quit.cancelAndQuit'), translate(lang, 'quit.keep')],
       defaultId: 1,
       cancelId: 1,
-      message: `${active.length} backup${active.length === 1 ? ' is' : 's are'} still running or queued.`,
-      detail: 'Quitting now cancels them. Schedules only run while the app is running.',
+      message: translate(lang, active.length === 1 ? 'quit.message.one' : 'quit.message.other', { count: active.length }),
+      detail: translate(lang, 'quit.detail'),
     })
     if (response !== 0) return
   }
@@ -136,6 +139,7 @@ if (!gotTheLock) {
     applyBackupSettings(config)
     applyStartWithSystem(config.settings.startWithSystem)
     onBackupActivity(setTrayActivity)
+    setNotificationClickHandler(showWindow)
     initScheduler(config)
 
     setTimeout(() => runCatchUp(), CATCH_UP_DELAY_MS)

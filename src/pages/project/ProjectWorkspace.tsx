@@ -20,6 +20,7 @@ type TabKey = 'overview' | 'sql' | 'tables' | 'auth' | 'storage' | 'functions' |
 const TABS: { key: TabKey; path: string; needs?: keyof ProjectCapabilities }[] = [
   { key: 'overview', path: '' },
   { key: 'sql', path: 'sql', needs: 'sql' },
+  { key: 'tables', path: 'tables', needs: 'sql' },
   { key: 'auth', path: 'auth', needs: 'auth' },
   { key: 'storage', path: 'storage', needs: 'storage' },
   { key: 'backups', path: 'backups' },

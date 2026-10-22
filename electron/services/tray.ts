@@ -1,7 +1,10 @@
 import { app, Menu, Tray, nativeImage } from 'electron'
 import path from 'path'
+import { translate } from '../core/mainMessages'
+import { mainLanguage } from './notify'
 
 let tray: Tray | null = null
+let actions: TrayActions | null = null
 
 export function appIconPath(): string {
   return app.isPackaged
@@ -15,20 +18,31 @@ export interface TrayActions {
   quit: () => void
 }
 
-export function createTray(actions: TrayActions): void {
+function buildMenu(): Menu {
+  const lang = mainLanguage()
+  return Menu.buildFromTemplate([
+    { label: translate(lang, 'tray.open'), click: actions!.showWindow },
+    { label: translate(lang, 'tray.backupAll'), click: actions!.backupAll },
+    { type: 'separator' },
+    { label: translate(lang, 'tray.quit'), click: actions!.quit },
+  ])
+}
+
+export function createTray(trayActions: TrayActions): void {
   if (tray) return
+  actions = trayActions
   const icon = nativeImage.createFromPath(appIconPath()).resize({ width: 32, height: 32 })
   tray = new Tray(icon)
-  tray.setToolTip('Supabase Backup')
-  tray.setContextMenu(
-    Menu.buildFromTemplate([
-      { label: 'Open Supabase Backup', click: actions.showWindow },
-      { label: 'Back up all projects now', click: actions.backupAll },
-      { type: 'separator' },
-      { label: 'Quit', click: actions.quit },
-    ])
-  )
-  tray.on('click', actions.showWindow)
+  tray.setToolTip(translate(mainLanguage(), 'tray.idle'))
+  tray.setContextMenu(buildMenu())
+  tray.on('click', trayActions.showWindow)
+}
+
+/** Rebuilds the menu after the language setting changes. */
+export function refreshTrayLanguage(): void {
+  if (!tray || tray.isDestroyed() || !actions) return
+  tray.setContextMenu(buildMenu())
+  tray.setToolTip(translate(mainLanguage(), 'tray.idle'))
 }
 
 export function hasTray(): boolean {
@@ -43,9 +57,13 @@ export function destroyTray(): void {
 /** Shows what the app is doing while the window is hidden. */
 export function setTrayActivity(running: number, queued: number): void {
   if (!hasTray()) return
+  const lang = mainLanguage()
   const text =
     running + queued === 0
-      ? 'Supabase Backup'
-      : `Supabase Backup — ${running} running${queued ? `, ${queued} queued` : ''}`
+      ? translate(lang, 'tray.idle')
+      : translate(lang, 'tray.activity', {
+          running,
+          queued: queued ? translate(lang, 'tray.queuedSuffix', { queued }) : '',
+        })
   tray!.setToolTip(text)
 }

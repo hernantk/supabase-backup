@@ -7,7 +7,6 @@ import { compressDirectory } from '../compress'
 import { encryptFile } from '../encrypt'
 import { uploadToDestinations } from '../destinations/uploader'
 import { applyRetention } from '../retention'
-import { sendNotification } from '../notify'
 import { getLogger } from '../logger'
 import { addBackupRecord } from '../history'
 import type { AppConfig, BackupOptions, BackupProgress, BackupResult } from '../../preload'
@@ -146,14 +145,6 @@ export async function runBackup(
       }
     }
 
-    if (config.notifications.enabled && config.notifications.onSuccess) {
-      try {
-        await sendNotification(config.notifications, result)
-      } catch (err: any) {
-        logger.warn(`Notification failed for ${backupId}: ${err.message}`)
-      }
-    }
-
     logger.info(`Backup ${backupId} completed in ${duration}ms`)
     return result
   } catch (error: any) {
@@ -177,9 +168,6 @@ export async function runBackup(
         status: 'failed',
       })
 
-      if (config.notifications.enabled && config.notifications.onFailure) {
-        await sendNotification(config.notifications, result)
-      }
     } catch (recordErr: any) {
       logger.warn(`Could not record failure of ${backupId}: ${recordErr.message}`)
     }
