@@ -6,6 +6,9 @@ export type { JobInfo, BatchSummary, QueueEvent }
 
 // ─── Connection config ────────────────────────────────────────────────────────
 
+/** What a backup can contain. Functions and config need the project to belong to an account. */
+export type BackupInclude = 'database' | 'storage' | 'functions' | 'config'
+
 export interface ConnectionConfig {
   id: string
   name: string
@@ -20,7 +23,7 @@ export interface ConnectionConfig {
     dbUrl: string
   }
   backup: {
-    include: ('database' | 'storage')[]
+    include: BackupInclude[]
     compress: boolean
     encrypt: boolean
     encryptionPassword: string
@@ -62,6 +65,8 @@ export interface AppSettings {
   catchUpMissed: boolean
   appearance: 'system' | 'light' | 'dark'
   language: 'system' | 'en' | 'pt-BR'
+  /** Look for a new release when the app starts (never installs without asking). */
+  autoUpdate: boolean
 }
 
 export interface AppConfig {
@@ -73,6 +78,8 @@ export interface AppConfig {
     webhookUrl: string
     onSuccess: boolean
     onFailure: boolean
+    /** System notification when a backup or batch finishes. */
+    native: boolean
   }
 }
 
@@ -80,7 +87,7 @@ export interface AppConfig {
 
 export interface BackupOptions {
   connectionId: string
-  include: ('database' | 'storage')[]
+  include: BackupInclude[]
   destinations: string[]
   compress: boolean
   encrypt: boolean
@@ -108,8 +115,10 @@ export interface BackupRecord {
   timestamp: string
   duration: number
   size: number
-  type: ('database' | 'storage')[]
+  type: BackupInclude[]
   destinations: string[]
+  /** Absolute path of the file in the local destination, when one was used. */
+  localPath?: string
   status: 'success' | 'failed' | 'running'
   error?: string
 }
@@ -241,6 +250,13 @@ export interface PgDumpWingetProgress {
   message: string
 }
 
+export interface UpdateState {
+  status: 'idle' | 'checking' | 'available' | 'none' | 'downloading' | 'ready' | 'error' | 'unsupported'
+  version?: string
+  percent?: number
+  error?: string
+}
+
 // ─── ElectronAPI ──────────────────────────────────────────────────────────────
 
 export interface ElectronAPI {
@@ -251,6 +267,13 @@ export interface ElectronAPI {
   getJobs: () => Promise<JobInfo[]>
   cancelJob: (jobId: string) => Promise<boolean>
   cancelBatch: (batchId: string) => Promise<number>
+
+  // Updates
+  getUpdateState: () => Promise<UpdateState>
+  checkForUpdates: () => Promise<UpdateState>
+  downloadUpdate: () => Promise<void>
+  installUpdate: () => Promise<void>
+  onUpdateState: (callback: (state: UpdateState) => void) => () => void
 
   // Manager (typed by ManagerApi, validated in the main process)
   manager: <K extends ManagerMethod>(method: K, payload: ManagerApi[K]['in']) => Promise<ManagerApi[K]['out']>
@@ -324,6 +347,17 @@ const electronAPI: ElectronAPI = {
   getJobs: () => ipcRenderer.invoke('backup:jobs'),
   cancelJob: (jobId) => ipcRenderer.invoke('backup:cancel-job', jobId),
   cancelBatch: (batchId) => ipcRenderer.invoke('backup:cancel-batch', batchId),
+
+  // Updates
+  getUpdateState: () => ipcRenderer.invoke('updater:state'),
+  checkForUpdates: () => ipcRenderer.invoke('updater:check'),
+  downloadUpdate: () => ipcRenderer.invoke('updater:download'),
+  installUpdate: () => ipcRenderer.invoke('updater:install'),
+  onUpdateState: (callback) => {
+    const handler = (_event: any, s: UpdateState) => callback(s)
+    ipcRenderer.on('updater:state', handler)
+    return () => ipcRenderer.removeListener('updater:state', handler)
+  },
 
   // Manager
   manager: (method, payload) => ipcRenderer.invoke('manager:call', method, payload),

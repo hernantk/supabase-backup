@@ -1,14 +1,12 @@
-import { useState, useEffect } from 'react'
-import { ScrollText, RefreshCw, Filter } from 'lucide-react'
+import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { RefreshCw, ScrollText, ShieldCheck } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
+import { useManagerQuery } from '../lib/api'
+import { formatDateTime } from '../lib/format'
+import { CenteredSpinner, EmptyState, Notice, PageHeader, Segmented } from '../components/ui'
 
-interface LogEntry {
-  timestamp: string
-  level: string
-  message: string
-  meta?: Record<string, any>
-}
-
-const levelColors: Record<string, string> = {
+const LEVEL_COLORS: Record<string, string> = {
   info: 'text-blue-400',
   warn: 'text-yellow-400',
   error: 'text-red-400',
@@ -16,118 +14,101 @@ const levelColors: Record<string, string> = {
 }
 
 export function Logs() {
-  const [logs, setLogs] = useState<LogEntry[]>([])
-  const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState<string>('')
+  const { t } = useTranslation()
+  const [tab, setTab] = useState<'changes' | 'app'>('changes')
+  const [level, setLevel] = useState('')
 
-  useEffect(() => {
-    loadLogs()
-  }, [filter])
+  const audit = useManagerQuery('audit.list', { limit: 300 }, { enabled: tab === 'changes' })
+  const logs = useQuery({
+    queryKey: ['logs', level],
+    queryFn: () => window.electronAPI.getLogs({ limit: 300, offset: 0, level: level || undefined }),
+    enabled: tab === 'app',
+  })
 
-  async function loadLogs() {
-    setLoading(true)
-    try {
-      const data = await window.electronAPI.getLogs({
-        limit: 200,
-        offset: 0,
-        level: filter || undefined,
-      })
-      setLogs(data)
-    } catch (err) {
-      console.error('Failed to load logs:', err)
-    } finally {
-      setLoading(false)
-    }
-  }
+  const refetch = () => (tab === 'changes' ? audit.refetch() : logs.refetch())
 
   return (
     <div className="space-y-6 max-w-5xl">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="page-title">Logs</h1>
-          <p className="text-surface-400 mt-1">Application logs and backup history</p>
-        </div>
-        <button onClick={loadLogs} className="btn-secondary flex items-center gap-2">
-          <RefreshCw size={16} />
-          Refresh
-        </button>
-      </div>
+      <PageHeader
+        title={t('logs.title')}
+        subtitle={t('logs.subtitle')}
+        actions={
+          <button className="btn-secondary" onClick={() => refetch()}>
+            <RefreshCw size={14} />
+            {t('common.refresh')}
+          </button>
+        }
+      />
 
-      {/* Filters */}
-      <div className="flex items-center gap-3">
-        <Filter size={16} className="text-surface-500" />
-        <div className="flex gap-2">
-          {['', 'info', 'warn', 'error'].map((level) => (
-            <button
-              key={level}
-              onClick={() => setFilter(level)}
-              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
-                filter === level
-                  ? 'bg-brand-500/10 text-brand-400 border border-brand-500/30'
-                  : 'bg-surface-800 text-surface-400 border border-surface-700 hover:border-surface-600'
-              }`}
-            >
-              {level || 'All'}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Log Entries */}
-      <div className="card p-0 overflow-hidden">
-        {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <div className="animate-spin w-6 h-6 border-2 border-brand-500 border-t-transparent rounded-full" />
-          </div>
-        ) : logs.length === 0 ? (
-          <div className="text-center py-12">
-            <ScrollText size={48} className="mx-auto text-surface-600 mb-4" />
-            <h3 className="text-lg font-medium text-surface-300 mb-2">No logs yet</h3>
-            <p className="text-sm text-surface-500">
-              Logs will appear here after your first backup.
-            </p>
-          </div>
-        ) : (
-          <div className="divide-y divide-surface-800 max-h-[600px] overflow-y-auto">
-            {logs.map((log, index) => (
-              <div
-                key={index}
-                className="px-4 py-3 hover:bg-surface-800/30 transition-colors font-mono text-xs"
-              >
-                <div className="flex items-start gap-3">
-                  <span className="text-surface-600 shrink-0 w-36">
-                    {formatTimestamp(log.timestamp)}
-                  </span>
-                  <span
-                    className={`uppercase font-bold shrink-0 w-12 ${
-                      levelColors[log.level] || 'text-surface-400'
-                    }`}
-                  >
-                    {log.level}
-                  </span>
-                  <span className="text-surface-200 break-all">{log.message}</span>
-                </div>
-                {log.meta && Object.keys(log.meta).length > 0 && (
-                  <div className="ml-[12rem] mt-1 text-surface-500">
-                    {JSON.stringify(log.meta)}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Segmented
+          label={t('logs.title')}
+          value={tab}
+          onChange={setTab}
+          options={[
+            { value: 'changes', label: t('logs.tabs.changes') },
+            { value: 'app', label: t('logs.tabs.app') },
+          ]}
+        />
+        {tab === 'app' && (
+          <Segmented
+            label="level"
+            value={level}
+            onChange={setLevel}
+            options={[
+              { value: '', label: t('logs.levels.all') },
+              { value: 'info', label: t('logs.levels.info') },
+              { value: 'warn', label: t('logs.levels.warn') },
+              { value: 'error', label: t('logs.levels.error') },
+            ]}
+          />
         )}
       </div>
+
+      {tab === 'changes' ? (
+        audit.isLoading ? (
+          <CenteredSpinner />
+        ) : audit.error ? (
+          <Notice tone="error">{audit.error.message}</Notice>
+        ) : (audit.data?.length ?? 0) === 0 ? (
+          <EmptyState icon={ShieldCheck} title={t('logs.empty.changesTitle')} body={t('logs.empty.changesBody')} />
+        ) : (
+          <ul className="list-group">
+            {audit.data!.map((entry, i) => (
+              <li key={i} className="list-row items-start !py-2.5">
+                <span className="w-36 shrink-0 text-[12.5px] text-surface-500 pt-0.5">{formatDateTime(entry.at)}</span>
+                <span className="flex-1 min-w-0">
+                  <span className="block text-[14px] text-surface-100">
+                    {(t(`logs.actions.${entry.action}` as never) as string) === `logs.actions.${entry.action}` ? entry.action : t(`logs.actions.${entry.action}` as never)}
+                    {entry.project && <span className="text-surface-400"> · {entry.project}</span>}
+                  </span>
+                  {entry.detail && (
+                    <span className="block font-mono text-[12px] text-surface-400 whitespace-pre-wrap break-all max-h-24 overflow-hidden">
+                      {entry.detail}
+                    </span>
+                  )}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )
+      ) : logs.isLoading ? (
+        <CenteredSpinner />
+      ) : (logs.data?.length ?? 0) === 0 ? (
+        <EmptyState icon={ScrollText} title={t('logs.empty.appTitle')} body={t('logs.empty.appBody')} />
+      ) : (
+        <ul className="list-group max-h-[640px] overflow-y-auto">
+          {logs.data!.map((log, i) => (
+            <li key={i} className="px-4 py-2.5 font-mono text-[12px]">
+              <div className="flex items-start gap-3">
+                <span className="text-surface-500 shrink-0 w-36">{formatDateTime(log.timestamp, { year: undefined })}</span>
+                <span className={`uppercase font-bold shrink-0 w-12 ${LEVEL_COLORS[log.level] ?? 'text-surface-400'}`}>{log.level}</span>
+                <span className="text-surface-200 break-all">{log.message}</span>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   )
-}
-
-function formatTimestamp(timestamp: string): string {
-  const date = new Date(timestamp)
-  return date.toLocaleString('pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  })
 }

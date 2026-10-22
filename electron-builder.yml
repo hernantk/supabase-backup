@@ -2,6 +2,11 @@ appId: com.supabase-backup.app
 productName: Supabase Backup
 copyright: Copyright © 2024
 
+publish:
+  - provider: github
+    owner: hernantk
+    repo: supabase-backup
+
 directories:
   output: release
   buildResources: resources

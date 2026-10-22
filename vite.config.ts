@@ -20,6 +20,7 @@ const sharedElectronExternals = [
   // ws and its optional native addons must not be bundled
   'ws',
   'pg',
+  'electron-updater',
   'pg-native',
   'bufferutil',
   'utf-8-validate',

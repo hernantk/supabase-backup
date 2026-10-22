@@ -48,6 +48,10 @@ function resync() {
 const routes: { [K in ManagerMethod]?: Route<K> } = {
   'projects.list': route(z.undefined(), () => projects.listProjects()),
   'projects.setProtected': route(project.extend({ protected: z.boolean() }), (i) => projects.setProtected(i.connectionId, i.protected)),
+  'projects.forget': route(project, (i) => {
+    projects.forgetProject(i.connectionId)
+    resync()
+  }),
   'projects.pause': route(project, (i) => projects.pauseProject(i.connectionId)),
   'projects.restore': route(project, (i) => projects.restoreProject(i.connectionId)),
   'projects.delete': route(project.extend({ confirmName: z.string() }), async (i) => {

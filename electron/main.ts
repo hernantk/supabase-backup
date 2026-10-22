@@ -12,6 +12,7 @@ import {
   startBatch,
 } from './services/backup/backupService'
 import { applyStartWithSystem, HIDDEN_FLAG } from './services/autostart'
+import { checkForUpdates } from './services/updater'
 import { createTray, destroyTray, hasTray, setTrayActivity } from './services/tray'
 import { applyAppearance, canvasColor, overlayColors, watchTheme } from './services/appearance'
 
@@ -23,6 +24,7 @@ const startHidden = process.argv.includes(HIDDEN_FLAG)
 
 /** Delay before looking for missed runs, so startup and the first window paint are not slowed down. */
 const CATCH_UP_DELAY_MS = 15_000
+const UPDATE_CHECK_DELAY_MS = 30_000
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -137,6 +139,7 @@ if (!gotTheLock) {
     initScheduler(config)
 
     setTimeout(() => runCatchUp(), CATCH_UP_DELAY_MS)
+    if (config.settings.autoUpdate) setTimeout(() => void checkForUpdates(), UPDATE_CHECK_DELAY_MS)
     // Timers do not fire while the PC sleeps, so look for missed runs again when it wakes up.
     powerMonitor.on('resume', () => setTimeout(() => runCatchUp(), CATCH_UP_DELAY_MS / 3))
 

@@ -19,6 +19,7 @@ import { queryLogs } from './services/logger'
 import { applyStartWithSystem } from './services/autostart'
 import { applyAppearance } from './services/appearance'
 import { registerManagerRoutes } from './ipc/managerRoutes'
+import { checkForUpdates, downloadUpdate, getUpdateState, installUpdate } from './services/updater'
 import {
   listAccounts,
   addAccount,
@@ -213,6 +214,12 @@ export function setupIpcHandlers(mainWindow: BrowserWindow | null) {
       mainWindow?.webContents.send('pgdump:winget-progress', progress)
     })
   })
+
+  // ── Updates ─────────────────────────────────────────────────────────────────
+  ipcMain.handle('updater:state', async () => getUpdateState())
+  ipcMain.handle('updater:check', async () => checkForUpdates())
+  ipcMain.handle('updater:download', async () => downloadUpdate())
+  ipcMain.handle('updater:install', async () => installUpdate())
 
   // ── Window controls ─────────────────────────────────────────────────────────
   ipcMain.on('window:minimize', () => mainWindow?.minimize())

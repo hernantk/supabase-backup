@@ -248,7 +248,8 @@
            transition-[background-color,color,box-shadow] duration-150 hover:text-surface-100;
   }
 
-  .segmented-item[aria-selected='true'] {
+  .segmented-item[aria-selected='true'],
+  .segmented-item.is-active {
     @apply bg-surface-900 text-surface-50 shadow-card;
   }
 }

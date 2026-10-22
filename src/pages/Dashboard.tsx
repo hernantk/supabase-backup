@@ -1,285 +1,150 @@
-import { useState, useEffect } from 'react'
-import {
-  Database,
-  HardDrive,
-  Clock,
-  CheckCircle2,
-  XCircle,
-  PlayCircle,
-  Calendar,
-  TrendingUp,
-  FolderOpen,
-} from 'lucide-react'
-import { BackupHistoryTable } from '../components/BackupHistoryTable'
-import { StatusBadge } from '../components/StatusBadge'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { FolderOpen, PlayCircle } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
+import { useConfig, useHistory } from '../hooks/useConfig'
+import { BackupHistoryList } from '../components/BackupHistoryList'
+import { CenteredSpinner, InfoRow, PageHeader, Section } from '../components/ui'
+import { formatBytes, formatDateTime, formatDuration } from '../lib/format'
 
-interface BackupRecord {
-  id: string
-  connectionId?: string
-  connectionName?: string
-  timestamp: string
-  duration: number
-  size: number
-  type: ('database' | 'storage')[]
-  destinations: string[]
-  status: 'success' | 'failed' | 'running'
-  error?: string
-}
-
-interface ConnectionSchedulerStatus {
-  connectionId: string
-  connectionName: string
-  running: boolean
-  cron: string
-  nextRun: string | null
-  lastRun: string | null
-  lastStatus: 'success' | 'failed' | null
-  lastError: string | null
-}
-
-interface SchedulerStatus {
-  activeCount: number
-  connections: ConnectionSchedulerStatus[]
-}
+const RECENT = 8
 
 export function Dashboard() {
+  const { t, i18n } = useTranslation()
   const navigate = useNavigate()
-  const [history, setHistory] = useState<BackupRecord[]>([])
-  const [scheduler, setScheduler] = useState<SchedulerStatus | null>(null)
-  const [localBackupPath, setLocalBackupPath] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
+  const client = useQueryClient()
+  const { data: history, isLoading } = useHistory()
+  const { data: config } = useConfig()
+  const scheduler = useQuery({
+    queryKey: ['scheduler'],
+    queryFn: () => window.electronAPI.getSchedulerStatus(),
+    refetchInterval: 30_000,
+  })
+  const [expanded, setExpanded] = useState(false)
 
-  useEffect(() => { loadData() }, [])
+  if (isLoading || !history) return <CenteredSpinner />
 
-  // Keep history + next-run times fresh (scheduled backups finish while this page is open)
-  useEffect(() => {
-    const refresh = () => { loadData(true) }
-    const unsub = window.electronAPI.onBackupComplete(refresh)
-    const timer = setInterval(refresh, 30_000)
-    return () => { unsub(); clearInterval(timer) }
-  }, [])
+  const successCount = history.filter((r) => r.status === 'success').length
+  const failedCount = history.filter((r) => r.status === 'failed').length
+  const totalSize = history.reduce((acc, r) => acc + r.size, 0)
+  const last = history[0]
+  const local = config?.destinations.local
+  const schedules = scheduler.data?.connections ?? []
 
-  async function loadData(silent = false) {
-    try {
-      const [historyData, schedulerData, cfg] = await Promise.all([
-        window.electronAPI.getBackupHistory(),
-        window.electronAPI.getSchedulerStatus(),
-        window.electronAPI.getConfig(),
-      ])
-      setHistory(historyData)
-      setScheduler(schedulerData as SchedulerStatus)
-      const local = (cfg as any).destinations?.local
-      if (local?.enabled && local?.path) setLocalBackupPath(local.path)
-    } catch (err) {
-      console.error('Failed to load data:', err)
-    } finally {
-      if (!silent) setLoading(false)
-    }
-  }
-
-  async function handleDelete(id: string) {
-    await window.electronAPI.deleteBackupRecord(id)
-    setHistory((prev) => prev.filter((r) => r.id !== id))
-  }
-
-  const totalBackups  = history.length
-  const successCount  = history.filter((r) => r.status === 'success').length
-  const failedCount   = history.filter((r) => r.status === 'failed').length
-  const totalSize     = history.reduce((acc, r) => acc + r.size, 0)
-  const lastBackup    = history[0]
-
-  // Next upcoming run across all scheduled connections
-  const nextScheduled = scheduler?.connections
-    .filter((c) => c.nextRun)
-    .sort((a, b) => new Date(a.nextRun!).getTime() - new Date(b.nextRun!).getTime())[0] ?? null
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <div className="animate-spin w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full" />
-      </div>
-    )
-  }
+  const stats = [
+    { label: t('dashboard.stats.total'), value: history.length.toLocaleString(i18n.language) },
+    { label: t('dashboard.stats.successful'), value: successCount.toLocaleString(i18n.language), tone: 'text-emerald-400' },
+    { label: t('dashboard.stats.failed'), value: failedCount.toLocaleString(i18n.language), tone: failedCount > 0 ? 'text-red-400' : '' },
+    { label: t('dashboard.stats.size'), value: formatBytes(totalSize) },
+  ]
 
   return (
-    <div className="space-y-6 max-w-6xl">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="page-title">Dashboard</h1>
-          <p className="text-surface-400 mt-1">Overview of your Supabase backups</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          {localBackupPath && (
-            <button
-              onClick={() => window.electronAPI.openFolder(localBackupPath)}
-              className="btn-secondary flex items-center gap-2"
-            >
-              <FolderOpen size={16} />
-              Open Backup Folder
+    <div className="space-y-8 max-w-5xl">
+      <PageHeader
+        title={t('dashboard.title')}
+        subtitle={t('dashboard.subtitle')}
+        actions={
+          <>
+            {local?.enabled && local.path && (
+              <button className="btn-secondary" onClick={() => window.electronAPI.openFolder(local.path)}>
+                <FolderOpen size={14} />
+                {t('dashboard.openFolder')}
+              </button>
+            )}
+            <button className="btn-primary" onClick={() => navigate('/backups')}>
+              <PlayCircle size={14} />
+              {t('dashboard.backUp')}
             </button>
-          )}
-          <button onClick={() => navigate('/backup')} className="btn-primary flex items-center gap-2">
-            <PlayCircle size={18} />
-            Run Backup
-          </button>
-        </div>
-      </div>
+          </>
+        }
+      />
 
-      {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard icon={<Database size={20} className="text-brand-400" />}
-          label="Total Backups" value={totalBackups.toString()} bgColor="bg-brand-500/10" />
-        <StatCard icon={<CheckCircle2 size={20} className="text-emerald-400" />}
-          label="Successful" value={successCount.toString()} bgColor="bg-emerald-500/10" />
-        <StatCard icon={<XCircle size={20} className="text-red-400" />}
-          label="Failed" value={failedCount.toString()} bgColor="bg-red-500/10" />
-        <StatCard icon={<HardDrive size={20} className="text-blue-400" />}
-          label="Total Size" value={formatBytes(totalSize)} bgColor="bg-blue-500/10" />
-      </div>
-
-      {/* Last backup + Scheduler */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Last backup */}
-        <div className="card">
-          <div className="flex items-center gap-2 mb-4">
-            <Clock size={18} className="text-surface-400" />
-            <h3 className="font-medium text-surface-200">Last Backup</h3>
+      <div className="list-group !divide-y-0 grid grid-cols-2 md:grid-cols-4 md:divide-x divide-surface-700/60">
+        {stats.map((s) => (
+          <div key={s.label} className="px-5 py-4">
+            <p className="text-[12.5px] text-surface-400">{s.label}</p>
+            <p className={`text-[26px] leading-tight font-semibold tracking-tight mt-0.5 ${s.tone ?? 'text-surface-50'}`}>{s.value}</p>
           </div>
-          {lastBackup ? (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-surface-400">Status</span>
-                <StatusBadge status={lastBackup.status} />
-              </div>
-              {lastBackup.connectionName && (
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-surface-400">Connection</span>
-                  <span className="text-sm text-surface-200">{lastBackup.connectionName}</span>
-                </div>
-              )}
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-surface-400">Time</span>
-                <span className="text-sm text-surface-200">
-                  {new Date(lastBackup.timestamp).toLocaleString('pt-BR')}
+        ))}
+      </div>
+
+      <div className="grid gap-8 lg:grid-cols-2">
+        <Section title={t('dashboard.lastBackup')}>
+          {last ? (
+            <div className="list-group">
+              <InfoRow label={t('dashboard.connection')}>{last.connectionName ?? '—'}</InfoRow>
+              <InfoRow label={t('common.status')}>
+                <span className={last.status === 'success' ? 'text-emerald-400' : last.status === 'failed' ? 'text-red-400' : 'text-blue-400'}>
+                  {t(`backups.state.${last.status === 'success' ? 'succeeded' : last.status}`)}
                 </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-surface-400">Size</span>
-                <span className="text-sm font-mono text-surface-200">{formatBytes(lastBackup.size)}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-surface-400">Duration</span>
-                <span className="text-sm text-surface-200">{formatDuration(lastBackup.duration)}</span>
-              </div>
+              </InfoRow>
+              <InfoRow label={t('dashboard.time')}>{formatDateTime(last.timestamp)}</InfoRow>
+              <InfoRow label={t('common.size')}>{formatBytes(last.size)}</InfoRow>
+              <InfoRow label={t('common.duration')}>{formatDuration(last.duration)}</InfoRow>
             </div>
           ) : (
-            <p className="text-sm text-surface-500">No backups yet</p>
-          )}
-        </div>
-
-        {/* Scheduler */}
-        <div className="card">
-          <div className="flex items-center gap-2 mb-4">
-            <Calendar size={18} className="text-surface-400" />
-            <h3 className="font-medium text-surface-200">Scheduled Backups</h3>
-          </div>
-
-          {scheduler && scheduler.activeCount > 0 ? (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-surface-400">Active schedules</span>
-                <span className="text-sm font-semibold text-emerald-400">{scheduler.activeCount}</span>
-              </div>
-              {nextScheduled && (
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-surface-400">Next run</span>
-                  <div className="text-right">
-                    <p className="text-sm text-surface-200">
-                      {new Date(nextScheduled.nextRun!).toLocaleString('pt-BR')}
-                    </p>
-                    <p className="text-xs text-surface-500">{nextScheduled.connectionName}</p>
-                  </div>
-                </div>
-              )}
-              <div className="space-y-2 pt-3 border-t border-surface-700">
-                {scheduler.connections.map((conn) => (
-                  <div key={conn.connectionId} className="flex items-start justify-between gap-3 text-xs">
-                    <div className="flex items-start gap-1.5 min-w-0">
-                      <div
-                        className={`w-1.5 h-1.5 mt-1 rounded-full shrink-0 ${
-                          conn.running ? 'bg-brand-400 animate-pulse'
-                            : conn.lastStatus === 'failed' ? 'bg-red-400' : 'bg-emerald-400'
-                        }`}
-                      />
-                      <div className="min-w-0">
-                        <p className="text-surface-300 truncate">{conn.connectionName}</p>
-                        {conn.running ? (
-                          <p className="text-brand-400">Queued / running…</p>
-                        ) : conn.lastStatus === 'failed' ? (
-                          <p className="text-red-400 truncate" title={conn.lastError ?? undefined}>
-                            Last run failed{conn.lastError ? `: ${conn.lastError}` : ''}
-                          </p>
-                        ) : conn.nextRun ? (
-                          <p className="text-surface-500">
-                            Next: {new Date(conn.nextRun).toLocaleString('pt-BR')}
-                          </p>
-                        ) : null}
-                      </div>
-                    </div>
-                    <span className="font-mono text-surface-500 shrink-0">{conn.cron}</span>
-                  </div>
-                ))}
-              </div>
+            <div className="list-group px-4 py-5">
+              <p className="text-[14px] text-surface-100">{t('dashboard.noBackups')}</p>
+              <p className="text-[12.5px] text-surface-500 mt-0.5">{t('dashboard.noBackupsHint')}</p>
             </div>
+          )}
+        </Section>
+
+        <Section
+          title={t('dashboard.schedules')}
+          action={schedules.length > 0 && <span className="text-[12.5px] text-surface-500">{t('dashboard.activeSchedules', { count: schedules.length })}</span>}
+        >
+          {schedules.length > 0 ? (
+            <ul className="list-group">
+              {schedules.map((s) => (
+                <li key={s.connectionId} className="list-row min-h-[52px]">
+                  <span
+                    className={`w-2 h-2 rounded-full shrink-0 ${s.running ? 'bg-brand-400 animate-pulse' : s.lastStatus === 'failed' ? 'bg-red-400' : 'bg-emerald-400'}`}
+                  />
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-[14px] text-surface-100 truncate">{s.connectionName}</span>
+                    <span className="block text-[12.5px] text-surface-500 truncate" title={s.lastError ?? undefined}>
+                      {s.running
+                        ? t('dashboard.queued')
+                        : s.lastStatus === 'failed'
+                          ? `${t('dashboard.lastFailed')}${s.lastError ? `: ${s.lastError}` : ''}`
+                          : s.nextRun
+                            ? t('dashboard.nextRun', { when: new Date(s.nextRun).toLocaleString(i18n.language) })
+                            : ''}
+                    </span>
+                  </span>
+                  <span className="font-mono text-[12px] text-surface-500 shrink-0">{s.cron}</span>
+                </li>
+              ))}
+            </ul>
           ) : (
-            <div className="space-y-2">
-              <p className="text-sm text-surface-500">No schedules active.</p>
-              <p className="text-xs text-surface-600">
-                Configure automatic schedules in Settings → Connections.
-              </p>
+            <div className="list-group px-4 py-5">
+              <p className="text-[14px] text-surface-100">{t('dashboard.noSchedules')}</p>
+              <p className="text-[12.5px] text-surface-500 mt-0.5">{t('dashboard.noSchedulesHint')}</p>
             </div>
           )}
-        </div>
+        </Section>
       </div>
 
-      {/* History table */}
-      <div>
-        <div className="flex items-center gap-2 mb-4">
-          <TrendingUp size={18} className="text-surface-400" />
-          <h3 className="font-medium text-surface-200">Backup History</h3>
-        </div>
-        <BackupHistoryTable records={history} onDelete={handleDelete} />
-      </div>
+      <Section
+        title={t('dashboard.recent')}
+        action={
+          history.length > RECENT && (
+            <button className="text-[13px] text-brand-400 hover:text-brand-300" onClick={() => setExpanded(!expanded)}>
+              {expanded ? t('dashboard.showLess') : t('dashboard.showMore')}
+            </button>
+          )
+        }
+      >
+        <BackupHistoryList
+          records={expanded ? history : history.slice(0, RECENT)}
+          onDelete={async (id) => {
+            await window.electronAPI.deleteBackupRecord(id)
+            await client.invalidateQueries({ queryKey: ['history'] })
+          }}
+        />
+      </Section>
     </div>
   )
-}
-
-function StatCard({ icon, label, value, bgColor }: {
-  icon: React.ReactNode; label: string; value: string; bgColor: string
-}) {
-  return (
-    <div className="card-hover flex items-center gap-4">
-      <div className={`p-3 rounded-lg ${bgColor}`}>{icon}</div>
-      <div>
-        <p className="text-sm text-surface-400">{label}</p>
-        <p className="text-xl font-bold text-surface-100">{value}</p>
-      </div>
-    </div>
-  )
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B'
-  const k = 1024
-  const sizes = ['B', 'KB', 'MB', 'GB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`
-}
-
-function formatDuration(ms: number): string {
-  if (ms < 1000) return `${ms}ms`
-  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`
-  return `${Math.floor(ms / 60000)}m ${Math.floor((ms % 60000) / 1000)}s`
 }

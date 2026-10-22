@@ -1,8 +1,19 @@
 import common from './common'
 import nav from './nav'
+import projects from './projects'
+import sql from './sql'
+import authUsers from './authUsers'
+import storage from './storage'
+import secrets from './secrets'
+import backups from './backups'
+import dashboard from './dashboard'
+import logs from './logs'
+import accounts from './accounts'
+import miniProgress from './miniProgress'
+import settings from './settings'
 
 /** Every feature's messages. Add new files here; both languages are derived from this list. */
-const all = { common, nav }
+const all = { common, nav, projects, sql, authUsers, storage, secrets, backups, dashboard, logs, accounts, miniProgress, settings }
 
 type All = typeof all
 

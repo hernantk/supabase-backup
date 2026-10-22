@@ -26,14 +26,10 @@ export async function listUsers(connectionId: string, page: number, perPage: num
   const { data, error } = await adminClient(connection).auth.admin.listUsers({ page, perPage })
   if (error) throw new Error(error.message)
   const users = data.users.map(toAuthUser)
-  const total = (data as { total?: number }).total
-  return {
-    users,
-    page,
-    perPage,
-    total,
-    hasMore: total !== undefined ? page * perPage < total : users.length === perPage,
-  }
+  const { total, nextPage } = data as { total?: number; nextPage?: number | null }
+  // GoTrue reports the next page through its Link header; fall back to the page size when it is absent.
+  const hasMore = nextPage != null ? true : total && total > 0 ? page * perPage < total : users.length === perPage
+  return { users, page, perPage, total: total && total > 0 ? total : undefined, hasMore }
 }
 
 export async function createUser(connectionId: string, email: string, password: string, confirmEmail: boolean): Promise<AuthUser> {

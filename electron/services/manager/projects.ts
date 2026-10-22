@@ -80,6 +80,15 @@ export function setProtected(connectionId: string, isProtected: boolean): void {
   })
 }
 
+/** Stops managing a project in this app; nothing changes on Supabase. */
+export function forgetProject(connectionId: string): void {
+  const ctx = projectContext(connectionId)
+  const config = loadConfig()
+  saveConfig({ ...config, connections: config.connections.filter((c) => c.id !== connectionId) })
+  forgetSchedule(connectionId)
+  appendAudit({ action: 'project.forget', project: ctx.connection.name })
+}
+
 export async function pauseProject(connectionId: string): Promise<void> {
   const ctx = projectContext(connectionId)
   const { api, ref } = requireAccount(ctx, 'Pausing a project')

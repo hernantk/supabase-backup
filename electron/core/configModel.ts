@@ -7,6 +7,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   catchUpMissed: true,
   appearance: 'system',
   language: 'system',
+  autoUpdate: true,
 }
 
 const APPEARANCES: string[] = ['system', 'light', 'dark']
@@ -61,7 +62,7 @@ export function migrateConfig(raw: any, defaults: ConfigDefaults): AppConfig {
   return {
     connections,
     destinations: raw.destinations ?? defaults.config.destinations,
-    notifications: raw.notifications ?? defaults.config.notifications,
+    notifications: { ...defaults.config.notifications, ...(raw.notifications ?? {}) },
     settings: {
       ...DEFAULT_SETTINGS,
       ...(raw.settings ?? {}),

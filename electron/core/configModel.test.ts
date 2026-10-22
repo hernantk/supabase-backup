@@ -30,7 +30,7 @@ const baseConfig: AppConfig = {
     gcs: { enabled: false, bucket: '', credentialsFile: '' },
     azure: { enabled: false, container: '', connectionString: '' },
   },
-  notifications: { enabled: false, webhookUrl: '', onSuccess: true, onFailure: true },
+  notifications: { enabled: false, webhookUrl: '', onSuccess: true, onFailure: true, native: true },
   settings: { ...DEFAULT_SETTINGS },
 }
 

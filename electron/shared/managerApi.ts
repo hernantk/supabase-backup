@@ -213,6 +213,7 @@ type Project = { connectionId: string }
 export interface ManagerApi {
   'projects.list': { in: void; out: ProjectsOverview }
   'projects.setProtected': { in: Project & { protected: boolean }; out: void }
+  'projects.forget': { in: Project; out: void }
   'projects.pause': { in: Project; out: void }
   'projects.restore': { in: Project; out: void }
   'projects.delete': { in: Project & { confirmName: string }; out: void }
