@@ -13,9 +13,10 @@ import miniProgress from './miniProgress'
 import settings from './settings'
 import restore from './restore'
 import tableEditor from './tables'
+import insights from './insights'
 
 /** Every feature's messages. Add new files here; both languages are derived from this list. */
-const all = { common, nav, projects, sql, authUsers, storage, secrets, backups, dashboard, logs, accounts, miniProgress, settings, restore, tableEditor }
+const all = { common, nav, projects, sql, authUsers, storage, secrets, backups, dashboard, logs, accounts, miniProgress, settings, restore, tableEditor, insights }
 
 type All = typeof all
 

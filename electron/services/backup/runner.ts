@@ -3,6 +3,8 @@ import path from 'path'
 import os from 'os'
 import { dumpDatabase } from './database'
 import { backupStorage } from './storage'
+import { backupConfig, backupFunctions } from './projectMeta'
+import { managementApiForAccount } from '../supabase/accounts'
 import { compressDirectory } from '../compress'
 import { encryptFile } from '../encrypt'
 import { uploadToDestinations } from '../destinations/uploader'
@@ -60,6 +62,22 @@ export async function runBackup(
       await backupStorage(connection.supabase, tempDir, (msg, progress) => {
         onProgress({ stage: 'storage', progress: progress ?? 0, message: msg })
       }, signal)
+    }
+
+    // ── Edge Functions and project configuration (need the Management API) ───
+    if ((include.includes('functions') || include.includes('config')) && !signal.aborted) {
+      const api = managementApiForAccount(connection.accountId)
+      if (!api || !connection.projectRef) {
+        throw new Error('Edge Function and configuration backups need the project to be connected through an account.')
+      }
+      if (include.includes('functions')) {
+        onProgress({ stage: 'functions', progress: 0, message: 'Listing Edge Functions...' })
+        await backupFunctions(api, connection.projectRef, tempDir, (msg, progress) => onProgress({ stage: 'functions', progress, message: msg }), signal)
+      }
+      if (include.includes('config') && !signal.aborted) {
+        onProgress({ stage: 'config', progress: 0, message: 'Reading project configuration...' })
+        await backupConfig(api, connection.projectRef, tempDir, { name: connection.name }, (msg, progress) => onProgress({ stage: 'config', progress, message: msg }), signal)
+      }
     }
 
     if (signal.aborted) throw new Error('Backup cancelled by user')

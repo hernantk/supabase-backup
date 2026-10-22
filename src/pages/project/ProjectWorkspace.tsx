@@ -23,6 +23,9 @@ const TABS: { key: TabKey; path: string; needs?: keyof ProjectCapabilities }[] =
   { key: 'tables', path: 'tables', needs: 'sql' },
   { key: 'auth', path: 'auth', needs: 'auth' },
   { key: 'storage', path: 'storage', needs: 'storage' },
+  { key: 'functions', path: 'functions', needs: 'functions' },
+  { key: 'logs', path: 'logs', needs: 'logs' },
+  { key: 'schema', path: 'schema', needs: 'sql' },
   { key: 'backups', path: 'backups' },
   { key: 'secrets', path: 'secrets', needs: 'secrets' },
 ]

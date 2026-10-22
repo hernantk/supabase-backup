@@ -19,6 +19,9 @@ import { Overview } from './pages/project/Overview'
 import { SqlEditor } from './pages/project/SqlEditor'
 import { TableEditor } from './pages/project/TableEditor'
 import { AuthUsers } from './pages/project/AuthUsers'
+import { Functions } from './pages/project/Functions'
+import { ProjectLogs } from './pages/project/ProjectLogs'
+import { Schema } from './pages/project/Schema'
 import { StorageBrowser } from './pages/project/StorageBrowser'
 import { ProjectBackups } from './pages/project/ProjectBackups'
 import { SecretsKeys } from './pages/project/SecretsKeys'
@@ -49,6 +52,9 @@ function Shell() {
                 <Route path="tables" element={<TableEditor />} />
                 <Route path="auth" element={<AuthUsers />} />
                 <Route path="storage" element={<StorageBrowser />} />
+                <Route path="functions" element={<Functions />} />
+                <Route path="logs" element={<ProjectLogs />} />
+                <Route path="schema" element={<Schema />} />
                 <Route path="backups" element={<ProjectBackups />} />
                 <Route path="secrets" element={<SecretsKeys />} />
               </Route>

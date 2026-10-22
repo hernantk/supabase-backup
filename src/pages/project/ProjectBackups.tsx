@@ -6,7 +6,7 @@ import { useConfig, useHistory, useUpdateConnection } from '../../hooks/useConfi
 import { useJobs } from '../../contexts/JobsContext'
 import { ProgressBar } from '../../components/ProgressBar'
 import { BackupHistoryList } from '../../components/BackupHistoryList'
-import { Notice, Section, Switch } from '../../components/ui'
+import { Notice, Section, Segmented, Switch } from '../../components/ui'
 import { useWorkspaceProject } from './ProjectWorkspace'
 import type { BackupInclude, ConnectionConfig } from '../../../electron/preload'
 
@@ -239,12 +239,10 @@ function ProcessingPanel({ connection }: { connection: ConnectionConfig }) {
   const { t } = useTranslation()
   const { update } = useUpdateConnection()
   const [password, setPassword] = useState(connection.backup.encryptionPassword)
-  const [keep, setKeep] = useState(String(connection.backup.retention.keepLast))
 
   useEffect(() => {
     setPassword(connection.backup.encryptionPassword)
-    setKeep(String(connection.backup.retention.keepLast))
-  }, [connection.id, connection.backup.encryptionPassword, connection.backup.retention.keepLast])
+  }, [connection.id, connection.backup.encryptionPassword])
 
   const setBackup = (patch: Partial<ConnectionConfig['backup']>) =>
     update(connection.id, (c) => ({ ...c, backup: { ...c.backup, ...patch } }))
@@ -287,25 +285,72 @@ function ProcessingPanel({ connection }: { connection: ConnectionConfig }) {
             onChange={(v) => setBackup({ retention: { ...connection.backup.retention, enabled: v } })}
           />
         </label>
-        {connection.backup.retention.enabled && (
-          <div className="list-row justify-between">
-            <span className="text-[14px] text-surface-100">{t('backups.keepLast')}</span>
-            <input
-              className="input !w-20 text-right"
-              type="number"
-              min={1}
-              max={365}
-              value={keep}
-              onChange={(e) => setKeep(e.target.value)}
-              onBlur={() => {
-                const n = Math.min(365, Math.max(1, Math.floor(Number(keep) || 1)))
-                setKeep(String(n))
-                if (n !== connection.backup.retention.keepLast) setBackup({ retention: { ...connection.backup.retention, keepLast: n } })
-              }}
-            />
-          </div>
-        )}
+        {connection.backup.retention.enabled && <RetentionFields connection={connection} onChange={(retention) => setBackup({ retention })} />}
       </div>
     </Section>
+  )
+}
+
+type Retention = ConnectionConfig['backup']['retention']
+
+const LAYERED_DEFAULTS = { keepLast: 3, keepDaily: 7, keepWeekly: 4, keepMonthly: 6 }
+
+function RetentionFields({ connection, onChange }: { connection: ConnectionConfig; onChange: (r: Retention) => void }) {
+  const { t } = useTranslation()
+  const r = connection.backup.retention
+  const layered = (r.keepDaily ?? 0) > 0 || (r.keepWeekly ?? 0) > 0 || (r.keepMonthly ?? 0) > 0
+
+  return (
+    <>
+      <div className="list-row justify-between">
+        <span className="text-[14px] text-surface-100">{t('backups.retentionMode')}</span>
+        <Segmented
+          label={t('backups.retentionMode')}
+          value={layered ? 'layered' : 'simple'}
+          onChange={(mode) =>
+            onChange(mode === 'layered' ? { enabled: true, ...LAYERED_DEFAULTS } : { enabled: true, keepLast: Math.max(1, r.keepLast) })
+          }
+          options={[
+            { value: 'simple', label: t('backups.retentionSimple') },
+            { value: 'layered', label: t('backups.retentionLayered') },
+          ]}
+        />
+      </div>
+      <NumberRow label={t('backups.keepLast')} value={r.keepLast} min={layered ? 0 : 1} onChange={(keepLast) => onChange({ ...r, keepLast })} />
+      {layered && (
+        <>
+          <NumberRow label={t('backups.keepDaily')} unit={t('backups.days')} value={r.keepDaily ?? 0} onChange={(keepDaily) => onChange({ ...r, keepDaily })} />
+          <NumberRow label={t('backups.keepWeekly')} unit={t('backups.weeks')} value={r.keepWeekly ?? 0} onChange={(keepWeekly) => onChange({ ...r, keepWeekly })} />
+          <NumberRow label={t('backups.keepMonthly')} unit={t('backups.months')} value={r.keepMonthly ?? 0} onChange={(keepMonthly) => onChange({ ...r, keepMonthly })} />
+          <p className="px-4 py-3 text-[12.5px] text-surface-500">{t('backups.layeredHint')}</p>
+        </>
+      )}
+    </>
+  )
+}
+
+function NumberRow({ label, unit, value, min = 0, onChange }: { label: string; unit?: string; value: number; min?: number; onChange: (n: number) => void }) {
+  const [text, setText] = useState(String(value))
+  useEffect(() => setText(String(value)), [value])
+  return (
+    <div className="list-row justify-between">
+      <span className="text-[14px] text-surface-100">{label}</span>
+      <span className="inline-flex items-center gap-2">
+        <input
+          className="input !w-20 text-right"
+          type="number"
+          min={min}
+          max={365}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onBlur={() => {
+            const n = Math.min(365, Math.max(min, Math.floor(Number(text) || 0)))
+            setText(String(n))
+            if (n !== value) onChange(n)
+          }}
+        />
+        {unit && <span className="text-[12.5px] text-surface-500 w-14">{unit}</span>}
+      </span>
+    </div>
   )
 }

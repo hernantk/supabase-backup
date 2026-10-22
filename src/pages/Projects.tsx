@@ -1,13 +1,13 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import { ChevronRight, FolderKanban, Lock, Plus, RefreshCw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { call, useManagerQuery } from '../lib/api'
-import { generatePassword, REGIONS } from '../lib/regions'
+import { call } from '../lib/api'
+import { emptyDraft, isDraftValid, NewProjectFields, type NewProjectDraft } from '../components/NewProjectFields'
 import { groupProjects, useProjects } from '../hooks/useProjects'
 import { ProjectStatusBadge, StatusDot } from '../components/ProjectStatus'
-import { CenteredSpinner, EmptyState, Notice, PageHeader, Section, Segmented, Sheet, Spinner } from '../components/ui'
+import { CenteredSpinner, EmptyState, Notice, PageHeader, Section, Sheet, Spinner } from '../components/ui'
 import { regionLabel } from '../lib/regions'
 
 export function Projects() {
@@ -114,33 +114,17 @@ function CreateProjectSheet({
   onCreated: (connectionId: string) => void
 }) {
   const { t } = useTranslation()
-  const accounts = useQuery({ queryKey: ['accounts'], queryFn: () => window.electronAPI.listAccounts(), enabled: open })
-  const [accountId, setAccountId] = useState('')
-  const [orgSlug, setOrgSlug] = useState('')
-  const [name, setName] = useState('')
-  const [region, setRegion] = useState('us-east-1')
-  const [plan, setPlan] = useState<'free' | 'pro'>('free')
-  const [password, setPassword] = useState(() => generatePassword())
+  const [draft, setDraft] = useState<NewProjectDraft>(emptyDraft)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-
-  const effectiveAccount = accountId || accounts.data?.[0]?.id || ''
-  const orgs = useManagerQuery('accounts.organizations', { accountId: effectiveAccount }, { enabled: open && !!effectiveAccount })
-  const effectiveOrg = orgSlug || orgs.data?.[0]?.slug || ''
-  const valid = !!effectiveAccount && !!effectiveOrg && name.trim().length > 0 && password.length >= 8
+  const valid = isDraftValid(draft)
 
   async function submit() {
     setBusy(true)
     setError(null)
     try {
-      const created = await call('projects.create', {
-        accountId: effectiveAccount,
-        name: name.trim(),
-        organizationSlug: effectiveOrg,
-        region,
-        dbPassword: password,
-        plan,
-      })
+      const created = await call('projects.create', { ...draft, name: draft.name.trim() })
+      setDraft(emptyDraft())
       onCreated(created.connectionId)
     } catch (err: any) {
       setError(err.message)
@@ -167,74 +151,8 @@ function CreateProjectSheet({
         </>
       }
     >
-      {accounts.isLoading ? (
-        <Spinner />
-      ) : (accounts.data?.length ?? 0) === 0 ? (
-        <Notice tone="info">{t('projects.create.noAccounts')}</Notice>
-      ) : (
-        <div className="space-y-4">
-          {accounts.data!.length > 1 && (
-            <div>
-              <label className="label">{t('projects.create.account')}</label>
-              <select className="input" value={effectiveAccount} onChange={(e) => { setAccountId(e.target.value); setOrgSlug('') }}>
-                {accounts.data!.map((a) => (
-                  <option key={a.id} value={a.id}>{a.name}</option>
-                ))}
-              </select>
-            </div>
-          )}
-          <div>
-            <label className="label">{t('projects.create.organization')}</label>
-            {orgs.isLoading ? (
-              <p className="text-[13px] text-surface-500">{t('projects.create.loadingOrgs')}</p>
-            ) : orgs.data?.length ? (
-              <select className="input" value={effectiveOrg} onChange={(e) => setOrgSlug(e.target.value)}>
-                {orgs.data.map((o) => (
-                  <option key={o.id} value={o.slug}>{o.name}</option>
-                ))}
-              </select>
-            ) : (
-              <p className="text-[13px] text-amber-400">{orgs.error?.message ?? t('projects.create.noOrgs')}</p>
-            )}
-          </div>
-          <div>
-            <label className="label">{t('projects.create.name')}</label>
-            <input className="input" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
-          </div>
-          <div>
-            <label className="label">{t('projects.create.region')}</label>
-            <select className="input" value={region} onChange={(e) => setRegion(e.target.value)}>
-              {REGIONS.map((r) => (
-                <option key={r.value} value={r.value}>{r.label}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="label">{t('projects.create.plan')}</label>
-            <Segmented
-              label={t('projects.create.plan')}
-              value={plan}
-              onChange={setPlan}
-              options={[
-                { value: 'free', label: t('projects.create.free') },
-                { value: 'pro', label: t('projects.create.pro') },
-              ]}
-            />
-            {plan === 'pro' && <p className="mt-2 text-[12.5px] text-amber-400">{t('projects.create.costWarning')}</p>}
-          </div>
-          <div>
-            <label className="label">{t('projects.create.password')}</label>
-            <div className="flex gap-2">
-              <input className="input font-mono" value={password} onChange={(e) => setPassword(e.target.value)} />
-              <button type="button" className="btn-secondary whitespace-nowrap" onClick={() => setPassword(generatePassword())}>
-                {t('projects.create.generate')}
-              </button>
-            </div>
-            <p className="mt-1.5 text-[12.5px] text-surface-500">{t('projects.create.passwordHint')}</p>
-          </div>
-          {error && <Notice tone="error">{error}</Notice>}
-        </div>
-      )}
+      <NewProjectFields draft={draft} onChange={setDraft} active={open} />
+      {error && <div className="mt-4"><Notice tone="error">{error}</Notice></div>}
     </Sheet>
   )
 }

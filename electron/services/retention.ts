@@ -5,14 +5,15 @@ import { AzureDestination } from './destinations/azure'
 import { getLogger } from './logger'
 import type { DestinationConfig } from '../preload'
 import type { DestinationProvider } from './destinations/local'
+import { isUsablePolicy, selectBackupsToKeep, type RetentionPolicy } from '../core/retention'
 
-export interface RetentionConfig {
+export interface RetentionConfig extends RetentionPolicy {
   enabled: boolean
-  keepLast: number
 }
 
 /**
- * Deletes the oldest backups of ONE connection, keeping the newest `keepLast`.
+ * Deletes the backups of ONE connection that the retention policy no longer keeps
+ * (the newest `keepLast`, plus optional daily/weekly/monthly layers).
  * Only files named `backup_<slug>_<timestamp>.*` are ever touched, so other connections'
  * backups and unrelated files in the destination are left alone.
  */
@@ -23,10 +24,11 @@ export async function applyRetention(
 ): Promise<void> {
   const logger = getLogger()
 
-  const keepLast = Math.floor(retention.keepLast)
-  if (!retention.enabled || !Number.isFinite(keepLast) || keepLast < 1) return
+  if (!retention.enabled || !isUsablePolicy(retention)) return
 
-  logger.info(`Applying retention policy for "${slug}": keep last ${keepLast} backups`)
+  logger.info(
+    `Applying retention policy for "${slug}": last ${retention.keepLast}, daily ${retention.keepDaily ?? 0}, weekly ${retention.keepWeekly ?? 0}, monthly ${retention.keepMonthly ?? 0}`
+  )
 
   // Slugs are sanitized to [a-z0-9_-] (see runner.sanitizeName), so they are safe inside a RegExp
   const pattern = new RegExp(`^backup_${slug}_(\\d+)\\.`)
@@ -39,9 +41,9 @@ export async function applyRetention(
         .map((file) => ({ file, match: pattern.exec(file) }))
         .filter((b): b is { file: string; match: RegExpExecArray } => b.match !== null)
         .map((b) => ({ file: b.file, time: Number(b.match[1]) }))
-        .sort((a, b) => b.time - a.time) // newest first
 
-      for (const { file } of backups.slice(keepLast)) {
+      const keep = selectBackupsToKeep(backups.map((b) => b.time), retention)
+      for (const { file } of backups.filter((b) => !keep.has(b.time))) {
         try {
           await provider.delete(file)
           logger.info(`Retention: deleted ${file} from ${name}`)

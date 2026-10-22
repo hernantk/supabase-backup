@@ -30,6 +30,10 @@ export interface ConnectionConfig {
     retention: {
       enabled: boolean
       keepLast: number
+      /** Layered policy: also keep the newest backup of each of the last N days, weeks and months. */
+      keepDaily?: number
+      keepWeekly?: number
+      keepMonthly?: number
     }
   }
   schedule: {
@@ -124,7 +128,7 @@ export interface BackupRecord {
 }
 
 export interface BackupProgress {
-  stage: 'database' | 'storage' | 'compress' | 'encrypt' | 'upload'
+  stage: 'database' | 'storage' | 'functions' | 'config' | 'compress' | 'encrypt' | 'upload'
   progress: number
   message: string
   currentFile?: string
@@ -268,6 +272,13 @@ export interface PgDumpWingetProgress {
   message: string
 }
 
+export interface CloneState {
+  connectionId: string
+  state: 'waiting' | 'restoring' | 'done' | 'failed'
+  error?: string
+  result?: RestoreResult
+}
+
 export interface UpdateState {
   status: 'idle' | 'checking' | 'available' | 'none' | 'downloading' | 'ready' | 'error' | 'unsupported'
   version?: string
@@ -296,6 +307,7 @@ export interface ElectronAPI {
   // Manager (typed by ManagerApi, validated in the main process)
   manager: <K extends ManagerMethod>(method: K, payload: ManagerApi[K]['in']) => Promise<ManagerApi[K]['out']>
   onManagerChanged: (callback: () => void) => () => void
+  onCloneState: (callback: (state: CloneState) => void) => () => void
 
   // Accounts
   listAccounts: () => Promise<AccountSummary[]>
@@ -380,6 +392,11 @@ const electronAPI: ElectronAPI = {
 
   // Manager
   manager: (method, payload) => ipcRenderer.invoke('manager:call', method, payload),
+  onCloneState: (callback) => {
+    const handler = (_event: any, state: CloneState) => callback(state)
+    ipcRenderer.on('clone:state', handler)
+    return () => ipcRenderer.removeListener('clone:state', handler)
+  },
   onManagerChanged: (callback) => {
     const handler = () => callback()
     ipcRenderer.on('manager:changed', handler)

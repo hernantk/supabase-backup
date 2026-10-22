@@ -10,6 +10,7 @@ import * as tables from '../services/manager/tables'
 import * as authUsers from '../services/manager/authUsers'
 import * as storage from '../services/manager/storageBrowser'
 import * as secrets from '../services/manager/secrets'
+import * as insights from '../services/manager/insights'
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
 
@@ -68,6 +69,20 @@ const routes: { [K in ManagerMethod]?: Route<K> } = {
       plan: z.enum(['free', 'pro']),
     }),
     (i) => projects.createProject(i)
+  ),
+  'projects.cloneFromBackup': route(
+    z.object({
+      accountId: z.string().min(1),
+      name: z.string().trim().min(1).max(64),
+      organizationSlug: z.string().min(1),
+      region: z.string().min(1),
+      dbPassword: z.string().min(8).max(200),
+      plan: z.enum(['free', 'pro']),
+      filePath: z.string().min(1),
+      scope: z.array(z.enum(['database', 'storage'])).min(1),
+      password: z.string().optional(),
+    }),
+    (i) => projects.cloneFromBackup(i)
   ),
   'accounts.organizations': route(z.object({ accountId: z.string().min(1) }), (i) => projects.listOrganizations(i.accountId)),
 
@@ -145,6 +160,20 @@ const routes: { [K in ManagerMethod]?: Route<K> } = {
   'secrets.delete': route(project.extend({ name: z.string().min(1) }), (i) => secrets.deleteSecret(i.connectionId, i.name)),
   'apiKeys.list': route(project, (i) => secrets.listApiKeys(i.connectionId)),
   'apiKeys.reveal': route(project.extend({ id: z.string().min(1) }), (i) => secrets.revealApiKey(i.connectionId, i.id)),
+
+  'functions.list': route(project, (i) => insights.listFunctions(i.connectionId)),
+  'functions.download': route(project.extend({ slug: z.string().min(1).max(128) }), (i) => insights.downloadFunction(i.connectionId, i.slug)),
+  'logs.query': route(
+    project.extend({
+      source: z.enum(['api', 'postgres', 'auth', 'functions', 'storage']),
+      hours: z.number().int().min(1).max(24),
+      search: z.string().max(200).optional(),
+    }),
+    (i) => insights.queryLogs(i.connectionId, i.source, i.hours, i.search)
+  ),
+  'migrations.list': route(project, (i) => insights.listMigrations(i.connectionId)),
+  'schema.get': route(project, (i) => insights.getSchema(i.connectionId)),
+  'schema.diff': route(z.object({ left: z.string().min(1), right: z.string().min(1) }), (i) => insights.compareSchemas(i.left, i.right)),
 
   'audit.list': route(z.object({ limit: z.number().int().min(1).max(1000) }), (i) => listAudit(i.limit)),
 }

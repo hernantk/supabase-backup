@@ -3,6 +3,8 @@ import { listAccounts, managementApiForAccount, createAccountProject } from '../
 import { forgetSchedule } from '../scheduleState'
 import { appendAudit } from '../audit'
 import { getLogger } from '../logger'
+import { emitToRenderer } from '../windowBus'
+import { startRestore } from '../backup/backupService'
 import { projectContext, requireAccount } from './context'
 import type { ConnectionConfig } from '../../preload'
 import type {
@@ -128,4 +130,58 @@ export async function createProject(input: CreateProjectInput): Promise<{ ref: s
   const created = await createAccountProject(input)
   appendAudit({ action: 'project.create', project: input.name, detail: `${created.ref} (${input.region}, ${input.plan})` })
   return created
+}
+
+// ─── Clone: create a project, then restore a backup into it ───────────────────
+
+const CLONE_POLL_MS = 6_000
+const CLONE_GIVE_UP_MS = 25 * 60 * 1000
+
+export interface CloneState {
+  connectionId: string
+  state: 'waiting' | 'restoring' | 'done' | 'failed'
+  error?: string
+  result?: { database: boolean; storageFiles: number; storageBuckets: number; warnings: string[] }
+}
+
+/**
+ * Creates a project and restores a backup into it as soon as Supabase reports it ready. The call
+ * returns right away; progress arrives through `clone:state` and the usual `restore:progress` events.
+ */
+export async function cloneFromBackup(
+  input: CreateProjectInput & { filePath: string; scope: ('database' | 'storage')[]; password?: string }
+): Promise<{ ref: string; connectionId: string }> {
+  const { filePath, scope, password, ...create } = input
+  const created = await createProject(create)
+  void restoreWhenReady(created.connectionId, create.name, { filePath, scope, password })
+  return created
+}
+
+async function restoreWhenReady(
+  connectionId: string,
+  name: string,
+  options: { filePath: string; scope: ('database' | 'storage')[]; password?: string }
+): Promise<void> {
+  const logger = getLogger()
+  const notify = (state: CloneState) => emitToRenderer('clone:state', state)
+  notify({ connectionId, state: 'waiting' })
+
+  const deadline = Date.now() + CLONE_GIVE_UP_MS
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, CLONE_POLL_MS))
+    const connection = loadConfig().connections.find((c) => c.id === connectionId)
+    if (!connection) return // the project was removed meanwhile
+    if (!connection.supabase.serviceRoleKey || !connection.supabase.dbUrl) continue
+
+    notify({ connectionId, state: 'restoring' })
+    try {
+      const result = await startRestore({ connectionId, filePath: options.filePath, scope: options.scope, password: options.password, confirmName: name }).promise
+      notify({ connectionId, state: 'done', result })
+    } catch (err: any) {
+      logger.error(`Clone restore into "${name}" failed: ${err.message}`)
+      notify({ connectionId, state: 'failed', error: err.message })
+    }
+    return
+  }
+  notify({ connectionId, state: 'failed', error: 'The new project did not become ready in time. Restore into it manually when it is healthy.' })
 }

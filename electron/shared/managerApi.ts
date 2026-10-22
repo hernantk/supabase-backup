@@ -218,6 +218,10 @@ export interface ManagerApi {
   'projects.restore': { in: Project; out: void }
   'projects.delete': { in: Project & { confirmName: string }; out: void }
   'projects.create': { in: CreateProjectInput; out: { ref: string; connectionId: string } }
+  'projects.cloneFromBackup': {
+    in: CreateProjectInput & { filePath: string; scope: ('database' | 'storage')[]; password?: string }
+    out: { ref: string; connectionId: string }
+  }
   'accounts.organizations': { in: { accountId: string }; out: OrganizationView[] }
 
   'sql.run': { in: Project & { sql: string; readOnly: boolean; confirmed?: boolean }; out: SqlRunOutcome }
@@ -269,8 +273,10 @@ export interface ManagerApi {
   'apiKeys.reveal': { in: Project & { id: string }; out: { key: string } }
 
   'functions.list': { in: Project; out: FunctionView[] }
+  'functions.download': { in: Project & { slug: string }; out: { savedTo: string | null } }
   'logs.query': { in: Project & { source: LogSource; hours: number; search?: string }; out: LogRow[] }
   'migrations.list': { in: Project; out: MigrationView[] }
+  'schema.get': { in: Project; out: SchemaColumn[] }
   'schema.diff': { in: { left: string; right: string }; out: SchemaChange[] }
 
   'audit.list': { in: { limit: number }; out: AuditEntry[] }

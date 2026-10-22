@@ -6,8 +6,11 @@ import { useConfig, useHistory } from '../hooks/useConfig'
 import { ProgressBar } from '../components/ProgressBar'
 import { CenteredSpinner, ConfirmSheet, EmptyState, Notice, PageHeader, Section, Switch } from '../components/ui'
 import { formatBytes, formatRelative } from '../lib/format'
-import { cleanError } from '../lib/api'
-import type { RestoreProgress, RestoreResult } from '../../electron/preload'
+import { call, cleanError } from '../lib/api'
+import { emptyDraft, isDraftValid, NewProjectFields, type NewProjectDraft } from '../components/NewProjectFields'
+import type { CloneState, RestoreProgress, RestoreResult } from '../../electron/preload'
+
+const NEW_PROJECT = '__new__'
 
 type Screen = 'setup' | 'running' | 'done' | 'error'
 
@@ -29,6 +32,9 @@ export function Restore() {
   const [logs, setLogs] = useState<string[]>([])
   const [result, setResult] = useState<RestoreResult | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [draft, setDraft] = useState<NewProjectDraft>(emptyDraft)
+  const [cloneId, setCloneId] = useState<string | null>(null)
+  const [cloneState, setCloneState] = useState<CloneState | null>(null)
   const logsRef = useRef<HTMLDivElement>(null)
 
   useEffect(
@@ -43,18 +49,37 @@ export function Restore() {
     []
   )
 
+  // A clone creates the project first and restores into it once Supabase reports it ready.
+  useEffect(
+    () =>
+      window.electronAPI.onCloneState((state) => {
+        if (state.connectionId !== cloneId) return
+        setCloneState(state)
+        if (state.state === 'done' && state.result) {
+          setResult(state.result)
+          setScreen('done')
+        } else if (state.state === 'failed') {
+          setError(state.error ?? t('restore.failed'))
+          setScreen('error')
+        }
+      }),
+    [cloneId, t]
+  )
+
   useEffect(() => {
     if (logsRef.current) logsRef.current.scrollTop = logsRef.current.scrollHeight
   }, [logs])
 
   const connections = config?.connections ?? []
-  const target = connections.find((c) => c.id === targetId) ?? connections[0]
-  const effectiveTargetId = target?.id ?? ''
+  const isNew = targetId === NEW_PROJECT
+  const target = isNew ? undefined : (connections.find((c) => c.id === targetId) ?? connections[0])
+  const effectiveTargetId = isNew ? NEW_PROJECT : (target?.id ?? '')
 
   const isSql = filePath.endsWith('.sql')
   const isEncrypted = filePath.endsWith('.enc')
-  const dbAccess = !!target?.supabase.dbUrl?.trim()
-  const storageAccess = !!target?.supabase.url && !!target?.supabase.serviceRoleKey
+  // A project that is about to be created will have both once it is ready.
+  const dbAccess = isNew || !!target?.supabase.dbUrl?.trim()
+  const storageAccess = isNew || (!!target?.supabase.url && !!target?.supabase.serviceRoleKey)
 
   const recent = useMemo(() => (history ?? []).filter((r) => r.status === 'success' && r.localPath).slice(0, 6), [history])
 
@@ -62,13 +87,35 @@ export function Restore() {
 
   const wantsDatabase = scope.database && dbAccess
   const wantsStorage = scope.storage && storageAccess && !isSql
-  const canStart = !!filePath && !!target && (wantsDatabase || wantsStorage) && (!isEncrypted || password.length > 0)
+  const canStart =
+    !!filePath && (isNew ? isDraftValid(draft) : !!target) && (wantsDatabase || wantsStorage) && (!isEncrypted || password.length > 0)
 
   async function browse() {
     const picked = await window.electronAPI.browseBackupFile()
     if (picked) {
       setFilePath(picked)
       setSourceConnectionId(undefined)
+    }
+  }
+
+  async function startClone() {
+    setScreen('running')
+    setLogs([])
+    setProgress(null)
+    setError(null)
+    setCloneState(null)
+    try {
+      const created = await call('projects.cloneFromBackup', {
+        ...draft,
+        name: draft.name.trim(),
+        filePath,
+        scope: [...(wantsDatabase ? (['database'] as const) : []), ...(wantsStorage ? (['storage'] as const) : [])],
+        password: isEncrypted ? password : undefined,
+      })
+      setCloneId(created.connectionId)
+    } catch (err) {
+      setError(cleanError(err))
+      setScreen('error')
     }
   }
 
@@ -96,6 +143,8 @@ export function Restore() {
   }
 
   function reset() {
+    setCloneId(null)
+    setCloneState(null)
     setScreen('setup')
     setProgress(null)
     setLogs([])
@@ -109,7 +158,7 @@ export function Restore() {
       <div className="space-y-6 max-w-3xl">
         <PageHeader
           title={t('restore.running')}
-          subtitle={target?.name}
+          subtitle={isNew ? draft.name : target?.name}
           actions={
             <button className="btn-danger" onClick={() => window.electronAPI.cancelRestore()}>
               <StopCircle size={14} />
@@ -121,7 +170,7 @@ export function Restore() {
           <div className="flex items-center justify-between text-[13px]">
             <span className="inline-flex items-center gap-2 font-medium text-surface-100">
               <Loader2 size={14} className="animate-spin text-brand-400" />
-              {t(`restore.stages.${progress?.stage ?? 'preparing'}`)}
+              {cloneState?.state === 'waiting' || (cloneId && !cloneState) ? t('restore.waitingForProject') : t(`restore.stages.${progress?.stage ?? 'preparing'}`)}
             </span>
             <span className="font-mono text-surface-400">{progress?.progress ?? 0}%</span>
           </div>
@@ -146,7 +195,7 @@ export function Restore() {
   if (screen === 'done' || screen === 'error') {
     return (
       <div className="space-y-6 max-w-3xl">
-        <PageHeader title={screen === 'done' ? t('restore.complete') : t('restore.failed')} subtitle={screen === 'done' ? t('restore.completeBody', { name: target?.name }) : undefined} />
+        <PageHeader title={screen === 'done' ? t('restore.complete') : t('restore.failed')} subtitle={screen === 'done' ? t('restore.completeBody', { name: isNew ? draft.name : target?.name }) : undefined} />
         {screen === 'done' && result ? (
           <div className="space-y-4">
             <div className="list-group">
@@ -245,8 +294,8 @@ export function Restore() {
       </Section>
 
       <Section title={t('restore.target')} footer={t('restore.targetHint')}>
-        {connections.length === 0 ? (
-          <EmptyState icon={ShieldAlert} title={t('restore.noProjects')} />
+        {connections.length === 0 && !isNew ? (
+          <EmptyState icon={ShieldAlert} title={t('restore.noProjects')} action={<button className="btn-secondary" onClick={() => setTargetId(NEW_PROJECT)}>{t('restore.newProject')}</button>} />
         ) : (
           <div className="list-group">
             <div className="list-row">
@@ -256,8 +305,15 @@ export function Restore() {
                     {c.name}{c.projectRef ? ` · ${c.projectRef}` : ''}
                   </option>
                 ))}
+                <option value={NEW_PROJECT}>{t('restore.newProject')}</option>
               </select>
             </div>
+            {isNew && (
+              <div className="px-4 py-4 space-y-4">
+                <p className="text-[12.5px] text-surface-500">{t('restore.newProjectHint')}</p>
+                <NewProjectFields draft={draft} onChange={setDraft} />
+              </div>
+            )}
             {sourceConnectionId && target && (
               <div className="px-4 py-2.5 text-[12.5px] text-surface-400">
                 {sourceConnectionId === target.id ? t('restore.sameProject') : t('restore.otherProject')}
@@ -294,9 +350,13 @@ export function Restore() {
       </Section>
 
       <div className="flex justify-end">
-        <button className="btn-danger" disabled={!canStart} onClick={() => setConfirming(true)}>
+        <button
+          className={isNew ? 'btn-primary' : 'btn-danger'}
+          disabled={!canStart}
+          onClick={() => (isNew ? void startClone() : setConfirming(true))}
+        >
           <ShieldAlert size={15} />
-          {target ? t('restore.startInto', { name: target.name }) : t('restore.start')}
+          {isNew ? t('restore.createAndRestore') : target ? t('restore.startInto', { name: target.name }) : t('restore.start')}
         </button>
       </div>
 
