@@ -45,7 +45,7 @@ export function Accounts() {
   return (
     <div className="space-y-6 max-w-4xl">
       <div>
-        <h1 className="text-2xl font-bold text-surface-50">Accounts</h1>
+        <h1 className="page-title">Accounts</h1>
         <p className="text-surface-400 mt-1">
           Connect Supabase accounts with a personal access token to find and import their projects.
           Tokens are encrypted on this computer and never shown again.

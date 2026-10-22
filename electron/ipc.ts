@@ -17,6 +17,7 @@ import { testDestination } from './services/destinations/tester'
 import { syncSchedules, stopAllSchedulers, getSchedulerStatus, validateCron } from './services/scheduler'
 import { queryLogs } from './services/logger'
 import { applyStartWithSystem } from './services/autostart'
+import { applyAppearance } from './services/appearance'
 import {
   listAccounts,
   addAccount,
@@ -115,6 +116,7 @@ export function setupIpcHandlers(mainWindow: BrowserWindow | null) {
     saveConfig(config)
     applyBackupSettings(config)
     applyStartWithSystem(config.settings.startWithSystem)
+    applyAppearance(config.settings.appearance)
     // Automatically reconcile all scheduled tasks whenever config is saved
     syncSchedules(config)
   })

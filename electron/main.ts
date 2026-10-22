@@ -13,6 +13,7 @@ import {
 } from './services/backup/backupService'
 import { applyStartWithSystem, HIDDEN_FLAG } from './services/autostart'
 import { createTray, destroyTray, hasTray, setTrayActivity } from './services/tray'
+import { applyAppearance, canvasColor, overlayColors, watchTheme } from './services/appearance'
 
 let mainWindow: BrowserWindow | null = null
 let isQuitting = false
@@ -31,11 +32,7 @@ function createWindow() {
     minHeight: 600,
     frame: false,
     titleBarStyle: 'hidden',
-    titleBarOverlay: {
-      color: '#020617',
-      symbolColor: '#e2e8f0',
-      height: 40,
-    },
+    titleBarOverlay: overlayColors(),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
@@ -43,7 +40,7 @@ function createWindow() {
       sandbox: false,
     },
     icon: path.join(__dirname, '../resources/icon.png'),
-    backgroundColor: '#020617',
+    backgroundColor: canvasColor(),
     show: false,
   })
 
@@ -119,6 +116,7 @@ if (!gotTheLock) {
     logger.info('Application starting...')
 
     const config = loadConfig()
+    applyAppearance(config.settings.appearance)
 
     try {
       createTray({ showWindow, backupAll: backupAllProjects, quit: () => void requestQuit() })
@@ -130,6 +128,7 @@ if (!gotTheLock) {
     // Create the window FIRST so mainWindow is not null when IPC handlers / scheduler
     // capture it in their closures (they use mainWindow?.webContents.send for events).
     createWindow()
+    watchTheme(() => mainWindow)
 
     setupIpcHandlers(mainWindow)
     applyBackupSettings(config)

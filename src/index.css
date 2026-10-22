@@ -2,85 +2,254 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Design tokens. Neutrals are tinted a few degrees toward the green accent (never pure grey);
+ * the surface scale runs "canvas (950) → card (900) → fill (800) → hairline (700) → text (≤500)"
+ * in both themes, so every existing `surface-*` class follows the system appearance.
+ */
+:root {
+  color-scheme: light;
+
+  --surface-0: 255 255 255;
+  --surface-50: 17 20 19;
+  --surface-100: 28 31 30;
+  --surface-200: 58 62 60;
+  --surface-300: 84 89 87;
+  --surface-400: 108 114 111;
+  --surface-500: 133 139 136;
+  --surface-600: 196 201 198;
+  --surface-700: 217 221 219;
+  --surface-800: 237 240 238;
+  --surface-900: 255 255 255;
+  --surface-950: 245 247 246;
+  --sidebar: 235 239 237;
+
+  --brand-50: 240 250 243;
+  --brand-100: 220 242 226;
+  --brand-200: 187 232 197;
+  --brand-300: 120 200 140;
+  --brand-400: 28 133 56;
+  --brand-500: 36 156 66;
+  --brand-600: 29 132 55;
+  --brand-700: 24 110 46;
+  --brand-800: 20 84 38;
+  --brand-900: 16 64 30;
+  --brand-950: 8 40 18;
+
+  --on-brand: 255 255 255;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+
+    --surface-0: 255 255 255;
+    --surface-50: 246 248 247;
+    --surface-100: 233 237 235;
+    --surface-200: 214 219 217;
+    --surface-300: 190 196 193;
+    --surface-400: 150 157 154;
+    --surface-500: 118 125 122;
+    --surface-600: 84 90 87;
+    --surface-700: 62 67 65;
+    --surface-800: 48 53 51;
+    --surface-900: 38 42 40;
+    --surface-950: 27 30 29;
+    --sidebar: 35 39 37;
+
+    --brand-50: 240 253 244;
+    --brand-100: 220 252 231;
+    --brand-200: 187 247 208;
+    --brand-300: 134 239 172;
+    --brand-400: 76 217 100;
+    --brand-500: 48 209 88;
+    --brand-600: 36 184 72;
+    --brand-700: 28 150 58;
+    --brand-800: 22 110 46;
+    --brand-900: 20 83 40;
+    --brand-950: 8 48 22;
+
+    --on-brand: 4 38 15;
+  }
+}
+
 @layer base {
   * {
     @apply border-surface-700;
   }
 
   html {
-    color-scheme: dark;
+    font-size: 14px;
   }
 
   body {
-    @apply bg-surface-950 text-surface-100 antialiased;
-    font-feature-settings: "rlig" 1, "calt" 1;
+    @apply bg-surface-950 text-surface-100 font-sans antialiased;
+    font-feature-settings: 'kern' 1, 'liga' 1;
+    -webkit-font-smoothing: antialiased;
   }
 
-  input[type='checkbox'] {
-    accent-color: theme('colors.brand.500');
+  ::selection {
+    @apply bg-brand-500/30;
   }
 
   button:focus-visible,
   a:focus-visible,
-  [role='tab']:focus-visible {
+  [role='tab']:focus-visible,
+  input:focus-visible,
+  select:focus-visible {
     @apply outline-none ring-2 ring-brand-500/60 ring-offset-2 ring-offset-surface-950;
   }
 
+  /* Overlay-style scrollbars, like macOS */
   ::-webkit-scrollbar {
-    @apply w-2 h-2;
+    @apply w-3 h-3;
   }
 
   ::-webkit-scrollbar-track {
-    @apply bg-surface-900;
+    background: transparent;
   }
 
   ::-webkit-scrollbar-thumb {
-    @apply bg-surface-600 rounded-full;
+    @apply bg-surface-600 rounded-full border-[3px] border-solid border-transparent bg-clip-content;
   }
 
   ::-webkit-scrollbar-thumb:hover {
     @apply bg-surface-500;
   }
+
+  /* Checkboxes: rounded square with an accent fill, as in macOS lists */
+  input[type='checkbox']:not(.switch) {
+    @apply appearance-none w-4 h-4 shrink-0 rounded-[5px] border border-surface-600 bg-surface-900
+           transition-colors cursor-pointer;
+  }
+
+  input[type='checkbox']:not(.switch):checked {
+    @apply bg-brand-500 border-brand-500;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='white' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 8.5l3 3 6-7'/%3E%3C/svg%3E");
+    background-size: 100% 100%;
+  }
+
+  input[type='checkbox']:disabled {
+    @apply opacity-40 cursor-not-allowed;
+  }
+
+  input[type='number']::-webkit-inner-spin-button {
+    opacity: 0.4;
+  }
 }
 
 @layer components {
+  /* ── Surfaces ─────────────────────────────────────────────────────────────── */
+
   .card {
-    @apply bg-surface-900 border border-surface-700 rounded-xl p-6;
+    @apply bg-surface-900 border border-surface-700/70 rounded-xl p-6 shadow-card;
   }
 
   .card-hover {
-    @apply card transition-all duration-200 hover:border-surface-600 hover:shadow-lg hover:shadow-black/20;
+    @apply card transition-shadow duration-200 hover:shadow-float;
   }
 
-  .btn-primary {
-    @apply bg-brand-500 text-white font-medium px-4 py-2 rounded-lg transition-all duration-200
-           hover:bg-brand-600 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed;
+  /* Inset grouped list (System Settings): rows divided by hairlines inside one rounded surface */
+  .list-group {
+    @apply bg-surface-900 border border-surface-700/70 rounded-xl shadow-card overflow-hidden
+           divide-y divide-surface-700/60;
   }
 
-  .btn-secondary {
-    @apply bg-surface-800 text-surface-200 font-medium px-4 py-2 rounded-lg border border-surface-600
-           transition-all duration-200 hover:bg-surface-700 active:scale-95
-           disabled:opacity-50 disabled:cursor-not-allowed;
+  .list-row {
+    @apply flex items-center gap-3 px-4 py-3 min-h-[44px];
   }
 
-  .btn-danger {
-    @apply bg-red-600 text-white font-medium px-4 py-2 rounded-lg transition-all duration-200
-           hover:bg-red-700 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed;
+  /* ── Type ─────────────────────────────────────────────────────────────────── */
+
+  .page-title {
+    @apply text-[28px] leading-tight font-bold tracking-tight text-surface-50;
   }
 
-  .btn-ghost {
-    @apply text-surface-300 font-medium px-4 py-2 rounded-lg transition-all duration-200
-           hover:bg-surface-800 hover:text-surface-100 active:scale-95;
+  .page-subtitle {
+    @apply text-[14px] text-surface-400 mt-1 max-w-[62ch];
   }
 
-  .input {
-    @apply bg-surface-800 border border-surface-600 rounded-lg px-3 py-2 text-surface-100
-           placeholder:text-surface-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50
-           focus:border-brand-500 transition-all duration-200 w-full;
+  .section-title {
+    @apply text-[13px] font-semibold text-surface-400 px-1 mb-2;
   }
 
   .label {
-    @apply text-sm font-medium text-surface-300 mb-1.5 block;
+    @apply text-[13px] font-medium text-surface-400 mb-1.5 block;
+  }
+
+  /* ── Buttons ──────────────────────────────────────────────────────────────── */
+
+  .btn-primary,
+  .btn-secondary,
+  .btn-danger,
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 text-[13.5px] font-medium px-4 py-[7px] rounded-lg
+           transition-[background-color,filter,opacity] duration-150
+           active:brightness-95 disabled:opacity-45 disabled:cursor-not-allowed disabled:active:brightness-100;
+  }
+
+  .btn-primary {
+    @apply bg-brand-500 hover:bg-brand-600 shadow-sm;
+    color: rgb(var(--on-brand));
+  }
+
+  .btn-secondary {
+    @apply bg-surface-800 text-surface-100 hover:bg-surface-700/80;
+  }
+
+  .btn-danger {
+    @apply bg-red-600 text-white hover:bg-red-700;
+  }
+
+  .btn-ghost {
+    @apply text-brand-400 hover:bg-brand-500/10;
+  }
+
+  /* ── Fields ───────────────────────────────────────────────────────────────── */
+
+  .input {
+    @apply bg-surface-950 border border-surface-700 rounded-lg px-3 py-[7px] text-surface-100 text-[14px]
+           placeholder:text-surface-500 focus:outline-none focus:ring-2 focus:ring-brand-500/40
+           focus:border-brand-500 transition-[border-color,box-shadow] duration-150 w-full;
+  }
+
+  /* iOS-style switch: put the class on <input type="checkbox"> */
+  .switch {
+    @apply relative appearance-none shrink-0 w-[38px] h-[22px] rounded-full bg-surface-600 cursor-pointer
+           transition-colors duration-200;
+  }
+
+  .switch::after {
+    content: '';
+    @apply absolute top-[2px] left-[2px] w-[18px] h-[18px] rounded-full bg-white shadow
+           transition-transform duration-200;
+    transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .switch:checked {
+    @apply bg-brand-500;
+  }
+
+  .switch:checked::after {
+    transform: translateX(16px);
+  }
+
+  .switch:disabled {
+    @apply opacity-40 cursor-not-allowed;
+  }
+
+  /* Segmented control */
+  .segmented {
+    @apply inline-flex p-[3px] gap-[2px] rounded-[9px] bg-surface-800;
+  }
+
+  .segmented-item {
+    @apply px-3.5 py-[5px] rounded-[7px] text-[13px] font-medium text-surface-400 whitespace-nowrap
+           transition-[background-color,color,box-shadow] duration-150 hover:text-surface-100;
+  }
+
+  .segmented-item[aria-selected='true'] {
+    @apply bg-surface-900 text-surface-50 shadow-card;
   }
 }
 
@@ -91,4 +260,20 @@
 
 .no-drag {
   -webkit-app-region: no-drag;
+}
+
+/* Status colours are tuned for dark surfaces; darken them on light ones to keep contrast. */
+@media (prefers-color-scheme: light) {
+  .text-red-300, .text-red-400 { color: #c4291f; }
+  .text-emerald-300, .text-emerald-400 { color: #1b7f3b; }
+  .text-amber-300, .text-amber-400, .text-amber-500 { color: #9a5a00; }
+  .text-yellow-400 { color: #8a6d00; }
+  .text-blue-400 { color: #0a62c9; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
 }

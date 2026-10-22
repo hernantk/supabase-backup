@@ -5,7 +5,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   closeToTray: true,
   startWithSystem: false,
   catchUpMissed: true,
+  appearance: 'system',
 }
+
+const APPEARANCES: string[] = ['system', 'light', 'dark']
 
 export const MIN_CONCURRENCY = 1
 export const MAX_CONCURRENCY = 16
@@ -61,6 +64,7 @@ export function migrateConfig(raw: any, defaults: ConfigDefaults): AppConfig {
       ...DEFAULT_SETTINGS,
       ...(raw.settings ?? {}),
       maxConcurrentBackups: clampConcurrency(raw.settings?.maxConcurrentBackups),
+      appearance: APPEARANCES.includes(raw.settings?.appearance) ? raw.settings.appearance : DEFAULT_SETTINGS.appearance,
     },
   }
 }

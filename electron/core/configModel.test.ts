@@ -84,6 +84,13 @@ describe('migrateConfig', () => {
     expect(twice).toEqual(once)
   })
 
+  it('falls back to the system appearance for unknown values', () => {
+    const migrated = migrateConfig({ ...baseConfig, settings: { ...DEFAULT_SETTINGS, appearance: 'sepia' } }, defaults)
+    expect(migrated.settings.appearance).toBe('system')
+    const dark = migrateConfig({ ...baseConfig, settings: { ...DEFAULT_SETTINGS, appearance: 'dark' } }, defaults)
+    expect(dark.settings.appearance).toBe('dark')
+  })
+
   it('clamps an out-of-range concurrency setting', () => {
     const migrated = migrateConfig({ ...baseConfig, settings: { ...DEFAULT_SETTINGS, maxConcurrentBackups: 999 } }, defaults)
     expect(migrated.settings.maxConcurrentBackups).toBe(16)

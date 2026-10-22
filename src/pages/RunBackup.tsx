@@ -356,7 +356,7 @@ export function RunBackup() {
   return (
     <div className="space-y-5 max-w-3xl">
       <div>
-        <h1 className="text-2xl font-bold text-surface-50">Run Backup</h1>
+        <h1 className="page-title">Run Backup</h1>
         <p className="text-surface-400 mt-1">Execute a manual backup now</p>
       </div>
 

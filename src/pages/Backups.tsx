@@ -129,7 +129,7 @@ export function Backups() {
     <div className="space-y-6 max-w-5xl">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-surface-50">Backups</h1>
+          <h1 className="page-title">Backups</h1>
           <p className="text-surface-400 mt-1">
             Back up several projects at once.{' '}
             {activeCount > 0
@@ -165,9 +165,9 @@ export function Backups() {
       )}
 
       {/* Project picker */}
-      <div className="card space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="font-medium text-surface-200">Projects</h2>
+      <section className="space-y-4">
+        <div className="flex items-center justify-between px-1">
+          <h2 className="section-title !mb-0">Projects</h2>
           {ready.length > 0 && (
             <button
               className="text-sm text-brand-400 hover:text-brand-300"
@@ -189,15 +189,15 @@ export function Backups() {
         ) : (
           groups.map(([group, projects]) => (
             <div key={group}>
-              <p className="text-xs uppercase tracking-wide text-surface-500 mb-2">{group}</p>
-              <ul className="divide-y divide-surface-800 rounded-lg border border-surface-800">
+              <p className="text-[12.5px] font-medium text-surface-500 px-1 mb-1.5">{group}</p>
+              <ul className="list-group">
                 {projects.map((c) => {
                   const problem = problemWith(c)
                   const busy = activeProjectIds.has(c.id)
                   return (
                     <li key={c.id}>
                       <label
-                        className={`flex items-center gap-3 px-4 py-2.5 ${problem ? 'opacity-60' : 'cursor-pointer hover:bg-surface-800/50'}`}
+                        className={`flex items-center gap-3 px-4 py-2.5 min-h-[52px] ${problem ? 'opacity-60' : 'cursor-pointer hover:bg-surface-800/50'}`}
                       >
                         <input
                           type="checkbox"
@@ -227,12 +227,12 @@ export function Backups() {
             </div>
           ))
         )}
-      </div>
+      </section>
 
       {/* Queue */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <h2 className="font-medium text-surface-200">Queue</h2>
+          <h2 className="section-title !mb-0">Queue</h2>
           {hasFinished && (
             <button className="btn-ghost flex items-center gap-1.5 text-sm" onClick={clearFinished}>
               <Trash2 size={14} />
@@ -242,7 +242,7 @@ export function Backups() {
         </div>
 
         {jobs.length === 0 && (
-          <div className="card text-sm text-surface-400">
+          <div className="list-group px-4 py-5 text-[13.5px] text-surface-400">
             Nothing running. Select projects above and start a batch; scheduled backups show up here too.
           </div>
         )}

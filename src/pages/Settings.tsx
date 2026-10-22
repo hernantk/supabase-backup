@@ -57,6 +57,7 @@ interface AppConfig {
     closeToTray: boolean
     startWithSystem: boolean
     catchUpMissed: boolean
+    appearance: 'system' | 'light' | 'dark'
   }
 }
 
@@ -262,22 +263,20 @@ export function Settings() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-surface-50">Settings</h1>
+          <h1 className="page-title">Settings</h1>
           <p className="text-surface-400 mt-1">Configure your backup preferences</p>
         </div>
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 bg-surface-900 p-1 rounded-lg border border-surface-700 overflow-x-auto">
+      <div className="segmented max-w-full overflow-x-auto" role="tablist">
         {tabs.map((tab) => (
           <button
             key={tab.key}
+            role="tab"
+            aria-selected={activeTab === tab.key}
             onClick={() => setActiveTab(tab.key)}
-            className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium whitespace-nowrap transition-all ${
-              activeTab === tab.key
-                ? 'bg-surface-700 text-surface-100'
-                : 'text-surface-400 hover:text-surface-200'
-            }`}
+            className="segmented-item flex items-center gap-1.5"
           >
             {tab.icon}
             {tab.label}
@@ -287,49 +286,84 @@ export function Settings() {
 
       {/* ── General tab ──────────────────────────────────────────────────────── */}
       {activeTab === 'general' && (
-        <div className="card space-y-6">
-          <div>
-            <h3 className="font-medium text-surface-200 mb-1">Parallel backups</h3>
-            <p className="text-sm text-surface-400 mb-3">
-              How many projects are backed up at the same time. The same project never runs twice at once;
-              extra backups wait in the queue.
-            </p>
-            <div className="flex items-center gap-3">
-              <input
-                type="number" min={1} max={16} className="input w-24"
-                value={config.settings.maxConcurrentBackups}
-                onChange={(e) => {
-                  const n = Math.min(16, Math.max(1, Math.floor(Number(e.target.value) || 1)))
-                  setConfig({ ...config, settings: { ...config.settings, maxConcurrentBackups: n } })
-                }}
-              />
-              <span className="text-xs text-surface-500">1 – 16 (each backup uses disk space for its temporary files)</span>
+        <div className="space-y-7">
+          <section>
+            <h3 className="section-title">Appearance</h3>
+            <div className="list-group">
+              <div className="list-row justify-between">
+                <span className="text-[14px] text-surface-100">Theme</span>
+                <div className="segmented" role="radiogroup" aria-label="Theme">
+                  {(['system', 'light', 'dark'] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      role="radio"
+                      aria-selected={config.settings.appearance === mode}
+                      aria-checked={config.settings.appearance === mode}
+                      className="segmented-item capitalize"
+                      onClick={() => {
+                        const next = { ...config, settings: { ...config.settings, appearance: mode } }
+                        setConfig(next)
+                        window.electronAPI.saveConfig(next).catch(console.error)
+                      }}
+                    >
+                      {mode}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
-          </div>
+          </section>
 
-          <div className="space-y-3 border-t border-surface-700 pt-5">
-            <h3 className="font-medium text-surface-200">Background</h3>
-            {([
-              ['closeToTray', 'Keep running in the tray when the window is closed', 'Scheduled backups only run while the app is running.'],
-              ['startWithSystem', 'Start with the system', 'Starts hidden in the tray when you log in (installed app only).'],
-              ['catchUpMissed', 'Run missed scheduled backups', 'If the PC was off or asleep at the scheduled time, run one backup when the app is back (up to 24 h late).'],
-            ] as const).map(([key, label, hint]) => (
-              <label key={key} className="flex items-start gap-3 cursor-pointer">
+          <section>
+            <h3 className="section-title">Parallel backups</h3>
+            <div className="list-group">
+              <div className="list-row">
+                <div className="flex-1 min-w-0">
+                  <p className="text-[14px] text-surface-100">Projects at the same time</p>
+                  <p className="text-[12.5px] text-surface-500">
+                    The same project never runs twice at once; the rest wait in the queue.
+                  </p>
+                </div>
                 <input
-                  type="checkbox" className="mt-1 w-4 h-4 rounded border-surface-600 bg-surface-800 text-brand-500"
-                  checked={config.settings[key]}
-                  onChange={(e) => setConfig({ ...config, settings: { ...config.settings, [key]: e.target.checked } })}
+                  type="number" min={1} max={16} className="input !w-20 text-right"
+                  value={config.settings.maxConcurrentBackups}
+                  onChange={(e) => {
+                    const n = Math.min(16, Math.max(1, Math.floor(Number(e.target.value) || 1)))
+                    setConfig({ ...config, settings: { ...config.settings, maxConcurrentBackups: n } })
+                  }}
                 />
-                <span>
-                  <span className="block text-sm text-surface-200">{label}</span>
-                  <span className="block text-xs text-surface-500">{hint}</span>
-                </span>
-              </label>
-            ))}
-          </div>
+              </div>
+            </div>
+            <p className="px-1 mt-2 text-[12.5px] text-surface-500">
+              Each running backup keeps temporary files on disk until it finishes.
+            </p>
+          </section>
+
+          <section>
+            <h3 className="section-title">Background</h3>
+            <div className="list-group">
+              {([
+                ['closeToTray', 'Keep running in the tray', 'Closing the window does not stop scheduled backups.'],
+                ['startWithSystem', 'Start with the system', 'Opens hidden in the tray at login (installed app only).'],
+                ['catchUpMissed', 'Run missed backups', 'If the PC was off or asleep at the scheduled time, run one backup when the app is back (up to 24 h late).'],
+              ] as const).map(([key, label, hint]) => (
+                <label key={key} className="list-row cursor-pointer">
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-[14px] text-surface-100">{label}</span>
+                    <span className="block text-[12.5px] text-surface-500">{hint}</span>
+                  </span>
+                  <input
+                    type="checkbox" className="switch"
+                    checked={config.settings[key]}
+                    onChange={(e) => setConfig({ ...config, settings: { ...config.settings, [key]: e.target.checked } })}
+                  />
+                </label>
+              ))}
+            </div>
+          </section>
 
           <div className="flex justify-end">
-            <button onClick={handleSave} disabled={saving} className="btn-primary flex items-center gap-2 text-sm">
+            <button onClick={handleSave} disabled={saving} className="btn-primary">
               {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
               {saved ? 'Saved' : 'Save'}
             </button>
@@ -913,10 +947,7 @@ function DestinationSection({
           <h4 className="font-medium text-surface-200">{title}</h4>
           {description && <p className="text-xs text-surface-500 mt-0.5">{description}</p>}
         </div>
-        <label className="relative inline-flex items-center cursor-pointer">
-          <input type="checkbox" checked={enabled} onChange={(e) => onToggle(e.target.checked)} className="sr-only peer" />
-          <div className="w-9 h-5 bg-surface-700 rounded-full peer peer-checked:bg-brand-500 transition-colors after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-full" />
-        </label>
+        <input type="checkbox" className="switch" checked={enabled} onChange={(e) => onToggle(e.target.checked)} />
       </div>
       {enabled && <div className="space-y-3 mt-4 pt-4 border-t border-surface-700">{children}</div>}
     </div>

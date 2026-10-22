@@ -44,7 +44,7 @@ export function Logs() {
     <div className="space-y-6 max-w-5xl">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-surface-50">Logs</h1>
+          <h1 className="page-title">Logs</h1>
           <p className="text-surface-400 mt-1">Application logs and backup history</p>
         </div>
         <button onClick={loadLogs} className="btn-secondary flex items-center gap-2">

@@ -107,7 +107,7 @@ export function Dashboard() {
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-surface-50">Dashboard</h1>
+          <h1 className="page-title">Dashboard</h1>
           <p className="text-surface-400 mt-1">Overview of your Supabase backups</p>
         </div>
         <div className="flex flex-wrap items-center gap-3">

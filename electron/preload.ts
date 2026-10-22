@@ -57,6 +57,7 @@ export interface AppSettings {
   startWithSystem: boolean
   /** Run a scheduled backup that was missed because the PC was off or asleep. */
   catchUpMissed: boolean
+  appearance: 'system' | 'light' | 'dark'
 }
 
 export interface AppConfig {

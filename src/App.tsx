@@ -17,11 +17,11 @@ export default function App() {
     <HashRouter>
       <JobsProvider>
       <BackupProvider>
-        <div className="h-screen flex flex-col overflow-hidden">
-          <TitleBar />
-          <div className="flex flex-1 overflow-hidden">
-            <SidebarNav />
-            <main className="flex-1 min-w-0 overflow-y-auto p-6 lg:p-8">
+        <div className="h-screen flex overflow-hidden bg-surface-950">
+          <SidebarNav />
+          <div className="flex-1 min-w-0 flex flex-col">
+            <TitleBar />
+            <main className="flex-1 min-w-0 overflow-y-auto px-8 pb-10 lg:px-12">
               <Routes>
                 <Route path="/" element={<Navigate to="/dashboard" replace />} />
                 <Route path="/dashboard" element={<Dashboard />} />

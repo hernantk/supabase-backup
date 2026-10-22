@@ -17,7 +17,7 @@ export interface TrayActions {
 
 export function createTray(actions: TrayActions): void {
   if (tray) return
-  const icon = nativeImage.createFromPath(appIconPath()).resize({ width: 16, height: 16 })
+  const icon = nativeImage.createFromPath(appIconPath()).resize({ width: 32, height: 32 })
   tray = new Tray(icon)
   tray.setToolTip('Supabase Backup')
   tray.setContextMenu(

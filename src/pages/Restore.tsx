@@ -303,7 +303,7 @@ export function Restore() {
     <div className="space-y-5 max-w-3xl">
       {/* Title */}
       <div>
-        <h1 className="text-2xl font-bold text-surface-50">Restore Database</h1>
+        <h1 className="page-title">Restore Database</h1>
         <p className="text-surface-400 mt-1">Restore a PostgreSQL backup to an existing connection</p>
       </div>
 
