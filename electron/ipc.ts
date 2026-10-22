@@ -1,5 +1,13 @@
 import { ipcMain, BrowserWindow, dialog, shell } from 'electron'
-import { runBackup, cancelBackup } from './services/backup/runner'
+import {
+  startBackup,
+  startBatch,
+  listJobs,
+  cancelJob,
+  cancelBatch,
+  cancelAllBackups,
+  applyBackupSettings,
+} from './services/backup/backupService'
 import { restoreDatabase, cancelRestore } from './services/backup/restore'
 import { loadConfig, saveConfig } from './services/config'
 import fs from 'fs'
@@ -21,17 +29,24 @@ import type { AppConfig, BackupOptions, LogQuery } from './preload'
 export function setupIpcHandlers(mainWindow: BrowserWindow | null) {
   // ── Backup ──────────────────────────────────────────────────────────────────
   ipcMain.handle('backup:run', async (_event, options: BackupOptions) => {
-    const config = loadConfig()
-    const result = await runBackup(config, options, (progress) => {
-      mainWindow?.webContents.send('backup:progress', progress)
-    })
-    // Notify listeners (context) so the global state is updated for manual runs too
-    mainWindow?.webContents.send('backup:complete', result)
-    return result
+    // Progress and completion events are emitted by the backup service.
+    return startBackup(options).promise
   })
 
-  ipcMain.handle('backup:cancel', async () => {
-    return cancelBackup()
+  ipcMain.handle('backup:run-batch', async (_event, connectionIds: string[]) => {
+    return startBatch(connectionIds)
+  })
+
+  ipcMain.handle('backup:jobs', async () => listJobs())
+
+  ipcMain.handle('backup:cancel-job', async (_event, jobId: string) => cancelJob(jobId))
+
+  ipcMain.handle('backup:cancel-batch', async (_event, batchId: string) => cancelBatch(batchId))
+
+  // Without a job id (legacy single-backup screen) everything in flight is cancelled.
+  ipcMain.handle('backup:cancel', async (_event, jobId?: string) => {
+    if (jobId) cancelJob(jobId)
+    else cancelAllBackups()
   })
 
   // ── Restore ──────────────────────────────────────────────────────────────────
@@ -72,6 +87,7 @@ export function setupIpcHandlers(mainWindow: BrowserWindow | null) {
 
   ipcMain.handle('config:save', async (_event, config: AppConfig) => {
     saveConfig(config)
+    applyBackupSettings(config)
     // Automatically reconcile all scheduled tasks whenever config is saved
     syncSchedules(config)
   })

@@ -25,6 +25,8 @@ import { PgDumpSetup } from '../components/PgDumpSetup'
 interface ConnectionConfig {
   id: string
   name: string
+  accountId?: string
+  projectRef?: string
   supabase: { url: string; serviceRoleKey: string; dbUrl: string }
   backup: {
     include: ('database' | 'storage')[]
@@ -50,6 +52,7 @@ interface AppConfig {
   notifications: {
     enabled: boolean; webhookUrl: string; onSuccess: boolean; onFailure: boolean
   }
+  settings: { maxConcurrentBackups: number }
 }
 
 const CRON_PRESETS = [

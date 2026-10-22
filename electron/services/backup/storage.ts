@@ -8,7 +8,8 @@ import type { SupabaseConfig } from '../../preload'
 export async function backupStorage(
   config: SupabaseConfig,
   outputDir: string,
-  onProgress?: (message: string, progress?: number) => void
+  onProgress?: (message: string, progress?: number) => void,
+  signal?: AbortSignal
 ): Promise<string> {
   const logger = getLogger()
   const storageDir = path.join(outputDir, 'storage')
@@ -70,6 +71,7 @@ export async function backupStorage(
     const files = await listAllFiles(supabase, bucket.name)
 
     for (const file of files) {
+      if (signal?.aborted) throw new Error('Backup cancelled by user')
       try {
         const filePath = path.join(bucketDir, file.name)
         const fileDir = path.dirname(filePath)

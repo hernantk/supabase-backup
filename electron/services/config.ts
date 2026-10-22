@@ -1,8 +1,11 @@
 import Store from 'electron-store'
-import { app } from 'electron'
+import { app, safeStorage } from 'electron'
 import path from 'path'
 import { randomUUID } from 'crypto'
 import type { AppConfig, ConnectionConfig } from '../preload'
+import { DEFAULT_SETTINGS, mapSecrets, migrateConfig } from '../core/configModel'
+import { createSecretCodec } from '../core/secretCodec'
+import { getLogger } from './logger'
 
 // ─── Default connection ───────────────────────────────────────────────────────
 
@@ -40,55 +43,53 @@ const defaultConfig: AppConfig = {
     azure: { enabled: false, container: '', connectionString: '' },
   },
   notifications: { enabled: false, webhookUrl: '', onSuccess: true, onFailure: true },
+  settings: { ...DEFAULT_SETTINGS },
 }
 
-// ─── Migration from old single-connection format ──────────────────────────────
+// ─── Secrets at rest ──────────────────────────────────────────────────────────
 
-function migrateConfig(raw: any): AppConfig {
-  if (!raw || typeof raw !== 'object') return defaultConfig
-
-  // Old format: raw.supabase existed but raw.connections did not
-  if (raw.supabase !== undefined && !Array.isArray(raw.connections)) {
-    return {
-      connections: [
-        {
-          ...makeDefaultConnection(),
-          supabase: raw.supabase ?? makeDefaultConnection().supabase,
-          backup: raw.backup ?? makeDefaultConnection().backup,
-          schedule: raw.schedule ?? makeDefaultConnection().schedule,
-        },
-      ],
-      destinations: raw.destinations ?? defaultConfig.destinations,
-      notifications: raw.notifications ?? defaultConfig.notifications,
-    }
-  }
-
-  // New format — ensure every connection has an id
-  if (Array.isArray(raw.connections)) {
-    raw.connections = raw.connections.map((c: any) => ({
-      ...makeDefaultConnection(),
-      ...c,
-      id: c.id ?? randomUUID(),
-    }))
-  }
-
-  return { ...defaultConfig, ...raw }
+/** Linux without a keyring falls back to a hard-coded key ("basic_text"), which is not protection. */
+function osEncryptionAvailable(): boolean {
+  if (!safeStorage.isEncryptionAvailable()) return false
+  if (process.platform === 'linux' && safeStorage.getSelectedStorageBackend?.() === 'basic_text') return false
+  return true
 }
+
+const secrets = createSecretCodec(
+  {
+    isAvailable: osEncryptionAvailable,
+    encrypt: (plain) => safeStorage.encryptString(plain),
+    decrypt: (data) => safeStorage.decryptString(data),
+  },
+  (message) => getLogger().warn(message)
+)
+
+export const secretCodec = secrets
 
 // ─── Store ────────────────────────────────────────────────────────────────────
 
 const store = new Store<{ config: AppConfig; history: any[] }>({
   defaults: { config: defaultConfig, history: [] },
+  // Obfuscation of the file only; real protection of secrets comes from safeStorage (see secretCodec).
   encryptionKey: 'supabase-backup-encryption-key',
 })
 
-export function loadConfig(): AppConfig {
-  const raw = store.get('config', defaultConfig)
-  return migrateConfig(raw)
+function migrate(raw: unknown): AppConfig {
+  return migrateConfig(raw, {
+    config: defaultConfig,
+    connection: () => makeDefaultConnection(),
+    newId: () => randomUUID(),
+  })
 }
 
+/** Returns the config with secrets decrypted, migrated to the current schema. */
+export function loadConfig(): AppConfig {
+  return mapSecrets(migrate(store.get('config', defaultConfig)), secrets.decode)
+}
+
+/** Persists the config with every secret encrypted by the OS keychain. */
 export function saveConfig(config: AppConfig): void {
-  store.set('config', config)
+  store.set('config', mapSecrets(config, secrets.encode))
 }
 
 export function getStore() {

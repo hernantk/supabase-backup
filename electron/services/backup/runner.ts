@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
-import { dumpDatabase, cancelDatabaseBackup } from './database'
+import { dumpDatabase } from './database'
 import { backupStorage } from './storage'
 import { compressDirectory } from '../compress'
 import { encryptFile } from '../encrypt'
@@ -12,30 +12,21 @@ import { getLogger } from '../logger'
 import { addBackupRecord } from '../history'
 import type { AppConfig, BackupOptions, BackupProgress, BackupResult } from '../../preload'
 
-let isRunning = false
-let isCancelled = false
-
-export function isBackupRunning(): boolean {
-  return isRunning
-}
-
+/**
+ * Runs one backup. Holds no module-level state, so any number of runs can be in flight;
+ * cancellation is per run through `signal` (the job queue owns concurrency and per-project locking).
+ */
 export async function runBackup(
   config: AppConfig,
   options: BackupOptions,
-  onProgress: (progress: BackupProgress) => void
+  onProgress: (progress: BackupProgress) => void,
+  signal: AbortSignal = new AbortController().signal
 ): Promise<BackupResult> {
-  if (isRunning) {
-    throw new Error('A backup is already running')
-  }
-
   // Resolve connection
   const connection = config.connections.find((c) => c.id === options.connectionId)
   if (!connection) {
     throw new Error(`Connection not found: "${options.connectionId}". Make sure the connection is configured in Settings.`)
   }
-
-  isRunning = true
-  isCancelled = false
 
   const logger = getLogger()
   const startTime = Date.now()
@@ -53,26 +44,26 @@ export async function runBackup(
     const include = options.include
 
     // ── Step 1: Database dump ────────────────────────────────────────────────
-    if (include.includes('database') && !isCancelled) {
+    if (include.includes('database') && !signal.aborted) {
       onProgress({ stage: 'database', progress: 0, message: 'Starting database backup...' })
 
       await dumpDatabase(connection.supabase, slug, tempDir, (msg) => {
         onProgress({ stage: 'database', progress: 50, message: msg })
-      })
+      }, signal)
 
       onProgress({ stage: 'database', progress: 100, message: 'Database backup completed' })
     }
 
     // ── Step 2: Storage backup ───────────────────────────────────────────────
-    if (include.includes('storage') && !isCancelled) {
+    if (include.includes('storage') && !signal.aborted) {
       onProgress({ stage: 'storage', progress: 0, message: 'Starting storage backup...' })
 
       await backupStorage(connection.supabase, tempDir, (msg, progress) => {
         onProgress({ stage: 'storage', progress: progress ?? 0, message: msg })
-      })
+      }, signal)
     }
 
-    if (isCancelled) throw new Error('Backup cancelled by user')
+    if (signal.aborted) throw new Error('Backup cancelled by user')
 
     // ── Step 3: Compress ─────────────────────────────────────────────────────
     let finalFile: string
@@ -96,7 +87,7 @@ export async function runBackup(
       onProgress({ stage: 'encrypt', progress: 100, message: 'Encryption completed' })
     }
 
-    if (isCancelled) throw new Error('Backup cancelled by user')
+    if (signal.aborted) throw new Error('Backup cancelled by user')
 
     // ── Step 5: Upload ───────────────────────────────────────────────────────
     onProgress({ stage: 'upload', progress: 0, message: 'Uploading to destinations...' })
@@ -196,17 +187,11 @@ export async function runBackup(
     logger.error(`Backup ${backupId} failed: ${error.message}`)
     throw error
   } finally {
-    // Always release the lock and temp files, otherwise one bad run blocks every future (scheduled) backup.
+    // Always remove temp files, whether the run succeeded, failed or was cancelled.
     cleanupTemp(tempDir)
     cleanupTemp(`${tempDir}.tar.gz`)
     cleanupTemp(`${tempDir}.tar.gz.enc`)
-    isRunning = false
   }
-}
-
-export async function cancelBackup(): Promise<void> {
-  isCancelled = true
-  cancelDatabaseBackup()
 }
 
 function getEnabledDestinations(config: AppConfig): string[] {

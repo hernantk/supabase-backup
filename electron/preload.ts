@@ -1,10 +1,16 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import type { JobInfo, BatchSummary, QueueEvent } from './core/jobQueue'
+
+export type { JobInfo, BatchSummary, QueueEvent }
 
 // ─── Connection config ────────────────────────────────────────────────────────
 
 export interface ConnectionConfig {
   id: string
   name: string
+  /** Set when the project was imported from a Supabase account (Management API). */
+  accountId?: string
+  projectRef?: string
   supabase: {
     url: string
     serviceRoleKey: string
@@ -43,8 +49,14 @@ export interface DestinationConfig {
   azure: { enabled: boolean; container: string; connectionString: string }
 }
 
+export interface AppSettings {
+  /** Backups allowed to run at the same time across all projects. */
+  maxConcurrentBackups: number
+}
+
 export interface AppConfig {
   connections: ConnectionConfig[]
+  settings: AppSettings
   destinations: DestinationConfig
   notifications: {
     enabled: boolean
@@ -66,6 +78,7 @@ export interface BackupOptions {
 
 export interface BackupResult {
   id: string
+  jobId?: string
   connectionId: string
   connectionName: string
   success: boolean
@@ -96,6 +109,17 @@ export interface BackupProgress {
   progress: number
   message: string
   currentFile?: string
+  /** Set by the backup service so the UI can tell concurrent runs apart. */
+  jobId?: string
+  connectionId?: string
+  connectionName?: string
+}
+
+export interface BatchStartResult {
+  batchId: string
+  jobs: { jobId: string; connectionId: string }[]
+  /** Connection ids that were requested but do not exist. */
+  skipped: string[]
 }
 
 // ─── Supabase config (used for standalone connection tests) ───────────────────
@@ -182,7 +206,11 @@ export interface PgDumpWingetProgress {
 export interface ElectronAPI {
   // Backup
   runBackup: (options: BackupOptions) => Promise<BackupResult>
-  cancelBackup: () => Promise<void>
+  cancelBackup: (jobId?: string) => Promise<void>
+  runBackupBatch: (connectionIds: string[]) => Promise<BatchStartResult>
+  getJobs: () => Promise<JobInfo[]>
+  cancelJob: (jobId: string) => Promise<boolean>
+  cancelBatch: (batchId: string) => Promise<number>
 
   // Config
   getConfig: () => Promise<AppConfig>
@@ -230,6 +258,7 @@ export interface ElectronAPI {
   // Events
   onBackupProgress: (callback: (progress: BackupProgress) => void) => () => void
   onBackupComplete: (callback: (result: BackupResult) => void) => () => void
+  onJobEvent: (callback: (event: QueueEvent<BackupProgress>) => void) => () => void
   onPgDumpDownloadProgress: (callback: (progress: PgDumpDownloadProgress) => void) => () => void
   onPgDumpWingetProgress: (callback: (progress: PgDumpWingetProgress) => void) => () => void
   onRestoreProgress: (callback: (progress: RestoreProgress) => void) => () => void
@@ -238,7 +267,11 @@ export interface ElectronAPI {
 const electronAPI: ElectronAPI = {
   // Backup
   runBackup: (options) => ipcRenderer.invoke('backup:run', options),
-  cancelBackup: () => ipcRenderer.invoke('backup:cancel'),
+  cancelBackup: (jobId) => ipcRenderer.invoke('backup:cancel', jobId),
+  runBackupBatch: (connectionIds) => ipcRenderer.invoke('backup:run-batch', connectionIds),
+  getJobs: () => ipcRenderer.invoke('backup:jobs'),
+  cancelJob: (jobId) => ipcRenderer.invoke('backup:cancel-job', jobId),
+  cancelBatch: (batchId) => ipcRenderer.invoke('backup:cancel-batch', batchId),
 
   // Config
   getConfig: () => ipcRenderer.invoke('config:get'),
@@ -293,6 +326,11 @@ const electronAPI: ElectronAPI = {
     const handler = (_event: any, result: BackupResult) => callback(result)
     ipcRenderer.on('backup:complete', handler)
     return () => ipcRenderer.removeListener('backup:complete', handler)
+  },
+  onJobEvent: (callback) => {
+    const handler = (_event: any, payload: QueueEvent<BackupProgress>) => callback(payload)
+    ipcRenderer.on('jobs:event', handler)
+    return () => ipcRenderer.removeListener('jobs:event', handler)
   },
   onPgDumpDownloadProgress: (callback) => {
     const handler = (_event: any, progress: PgDumpDownloadProgress) => callback(progress)

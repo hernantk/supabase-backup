@@ -5,8 +5,6 @@ import { getLogger } from '../logger'
 import { detectPgDump } from '../pgDumpInstaller'
 import type { SupabaseConfig } from '../../preload'
 
-let currentProcess: ChildProcess | null = null
-
 /** Returns the best available pg_dump binary path, or throws with a helpful message. */
 async function resolvePgDumpPath(): Promise<string> {
   const info = await detectPgDump()
@@ -23,7 +21,8 @@ export async function dumpDatabase(
   config: SupabaseConfig,
   label: string,
   outputDir: string,
-  onProgress?: (message: string) => void
+  onProgress?: (message: string) => void,
+  signal?: AbortSignal
 ): Promise<string> {
   const logger = getLogger()
   const outputFile = path.join(outputDir, `database_${label}_${Date.now()}.sql`)
@@ -37,6 +36,11 @@ export async function dumpDatabase(
   onProgress?.('Initiating database dump...')
 
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new Error('Backup cancelled by user'))
+      return
+    }
+
     const args = [
       config.dbUrl,
       '--format=plain',
@@ -47,14 +51,18 @@ export async function dumpDatabase(
       `--file=${outputFile}`,
     ]
 
-    currentProcess = spawn(pgDumpPath, args, {
+    // One process per call: parallel backups must never share a handle.
+    const proc: ChildProcess = spawn(pgDumpPath, args, {
       env: { ...process.env },
       stdio: ['pipe', 'pipe', 'pipe'],
     })
 
+    const onAbort = () => proc.kill('SIGTERM')
+    signal?.addEventListener('abort', onAbort, { once: true })
+
     let stderr = ''
 
-    currentProcess.stderr?.on('data', (data) => {
+    proc.stderr?.on('data', (data) => {
       const msg = data.toString()
       stderr += msg
       // pg_dump outputs "no matching tables were found" as a non-fatal warning
@@ -66,13 +74,15 @@ export async function dumpDatabase(
       }
     })
 
-    currentProcess.stdout?.on('data', (data) => {
+    proc.stdout?.on('data', (data) => {
       onProgress?.(data.toString().trim())
     })
 
-    currentProcess.on('close', (code) => {
-      currentProcess = null
-      if (code === 0) {
+    proc.on('close', (code) => {
+      signal?.removeEventListener('abort', onAbort)
+      if (signal?.aborted) {
+        reject(new Error('Backup cancelled by user'))
+      } else if (code === 0) {
         const stats = fs.statSync(outputFile)
         logger.info(`Database dump completed: ${outputFile} (${stats.size} bytes)`)
         onProgress?.(`Database dump completed (${formatBytes(stats.size)})`)
@@ -84,8 +94,8 @@ export async function dumpDatabase(
       }
     })
 
-    currentProcess.on('error', (err) => {
-      currentProcess = null
+    proc.on('error', (err) => {
+      signal?.removeEventListener('abort', onAbort)
       const msg = `Failed to start pg_dump: ${err.message}`
       logger.error(msg)
       reject(new Error(msg))
@@ -187,13 +197,6 @@ export async function testSupabaseConnection(
       resolve({ success: false, message: `Failed to run pg_dump: ${err.message}` })
     })
   })
-}
-
-export function cancelDatabaseBackup(): void {
-  if (currentProcess) {
-    currentProcess.kill('SIGTERM')
-    currentProcess = null
-  }
 }
 
 function formatBytes(bytes: number): string {

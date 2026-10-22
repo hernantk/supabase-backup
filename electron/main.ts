@@ -4,6 +4,7 @@ import { setupIpcHandlers } from './ipc'
 import { initLogger } from './services/logger'
 import { initScheduler } from './services/scheduler'
 import { loadConfig } from './services/config'
+import { applyBackupSettings } from './services/backup/backupService'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -65,6 +66,7 @@ app.whenReady().then(async () => {
   createWindow()
 
   setupIpcHandlers(mainWindow)
+  applyBackupSettings(config)
   initScheduler(config)
 
   app.on('activate', () => {
