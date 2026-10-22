@@ -1,0 +1,40 @@
+import { defineMessages } from '../messages'
+
+export default defineMessages(
+  {
+    dashboard: 'Dashboard',
+    projects: 'Projects',
+    allProjects: 'All projects',
+    backups: 'Backups',
+    queue: 'Queue',
+    restore: 'Restore',
+    supabase: 'Supabase',
+    accounts: 'Accounts',
+    logs: 'Activity',
+    settings: 'Settings',
+    version: 'Version {{version}}',
+    standalone: 'Standalone',
+    noProjects: 'No projects yet',
+    addAccount: 'Add an account',
+    collapse: 'Collapse',
+    expand: 'Expand',
+  },
+  {
+    dashboard: 'Painel',
+    projects: 'Projetos',
+    allProjects: 'Todos os projetos',
+    backups: 'Backups',
+    queue: 'Fila',
+    restore: 'Restaurar',
+    supabase: 'Supabase',
+    accounts: 'Contas',
+    logs: 'Atividade',
+    settings: 'Ajustes',
+    version: 'Versão {{version}}',
+    standalone: 'Avulsos',
+    noProjects: 'Nenhum projeto ainda',
+    addAccount: 'Adicionar uma conta',
+    collapse: 'Recolher',
+    expand: 'Expandir',
+  }
+)

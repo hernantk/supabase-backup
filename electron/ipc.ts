@@ -18,6 +18,7 @@ import { syncSchedules, stopAllSchedulers, getSchedulerStatus, validateCron } fr
 import { queryLogs } from './services/logger'
 import { applyStartWithSystem } from './services/autostart'
 import { applyAppearance } from './services/appearance'
+import { registerManagerRoutes } from './ipc/managerRoutes'
 import {
   listAccounts,
   addAccount,
@@ -37,6 +38,8 @@ import {
 import type { AppConfig, BackupOptions, ImportProjectRequest, LogQuery } from './preload'
 
 export function setupIpcHandlers(mainWindow: BrowserWindow | null) {
+  registerManagerRoutes()
+
   // ── Backup ──────────────────────────────────────────────────────────────────
   ipcMain.handle('backup:run', async (_event, options: BackupOptions) => {
     // Progress and completion events are emitted by the backup service.

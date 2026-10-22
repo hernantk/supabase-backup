@@ -32,6 +32,7 @@ export function pickPrimaryPooler<T extends { database_type?: string }>(poolers:
 }
 
 export interface ApiKeyInfo {
+  id?: string
   type?: 'legacy' | 'publishable' | 'secret' | null
   name: string
   api_key?: string | null

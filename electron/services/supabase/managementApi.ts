@@ -1,6 +1,6 @@
 import type { ApiKeyInfo, PoolerConfig } from '../../core/dbUrl'
 
-const BASE_URL = 'https://api.supabase.com'
+const BASE_URL = process.env.SUPABASE_MANAGEMENT_API_URL ?? 'https://api.supabase.com'
 const MAX_RETRIES = 3
 
 export interface RemoteOrganization {
@@ -21,6 +21,40 @@ export interface RemoteProject {
 }
 
 export type PoolerEntry = PoolerConfig & { database_type?: string }
+
+export interface RemoteSecret {
+  name: string
+  /** SHA-256 digest of the value; the API never returns the value itself. */
+  value: string
+  updated_at?: string
+}
+
+export interface RemoteFunction {
+  id: string
+  slug: string
+  name: string
+  status: string
+  version: number
+  created_at?: number
+  updated_at?: number
+  verify_jwt?: boolean
+  entrypoint_path?: string
+}
+
+export interface RemoteMigration {
+  version: string
+  name?: string
+}
+
+export interface CreateProjectRequest {
+  name: string
+  organization_slug: string
+  db_pass: string
+  region: string
+  plan?: 'free' | 'pro'
+}
+
+export type ProjectConfigKind = 'auth' | 'storage' | 'postgres' | 'pooler' | 'realtime'
 
 export class ManagementApiError extends Error {
   constructor(
@@ -65,8 +99,59 @@ export class ManagementApi {
   }
 
   /** `reveal` makes the API return the secret key values instead of masked ones. */
-  getApiKeys(ref: string): Promise<ApiKeyInfo[]> {
-    return this.request('GET', `/v1/projects/${enc(ref)}/api-keys?reveal=true`)
+  getApiKeys(ref: string, reveal = false): Promise<ApiKeyInfo[]> {
+    return this.request('GET', `/v1/projects/${enc(ref)}/api-keys?reveal=${reveal}`)
+  }
+
+  createProject(body: CreateProjectRequest): Promise<RemoteProject> {
+    return this.request('POST', '/v1/projects', body)
+  }
+
+  deleteProject(ref: string): Promise<void> {
+    return this.request('DELETE', `/v1/projects/${enc(ref)}`)
+  }
+
+  listSecrets(ref: string): Promise<RemoteSecret[]> {
+    return this.request('GET', `/v1/projects/${enc(ref)}/secrets`)
+  }
+
+  createSecrets(ref: string, secrets: { name: string; value: string }[]): Promise<void> {
+    return this.request('POST', `/v1/projects/${enc(ref)}/secrets`, secrets)
+  }
+
+  deleteSecrets(ref: string, names: string[]): Promise<void> {
+    return this.request('DELETE', `/v1/projects/${enc(ref)}/secrets`, names)
+  }
+
+  listFunctions(ref: string): Promise<RemoteFunction[]> {
+    return this.request('GET', `/v1/projects/${enc(ref)}/functions`)
+  }
+
+  /** Raw function body as served by the API (an eszip/multipart bundle), for archiving. */
+  getFunctionBody(ref: string, slug: string): Promise<Buffer> {
+    return this.requestRaw('GET', `/v1/projects/${enc(ref)}/functions/${enc(slug)}/body`)
+  }
+
+  listMigrations(ref: string): Promise<RemoteMigration[]> {
+    return this.request('GET', `/v1/projects/${enc(ref)}/database/migrations`)
+  }
+
+  getProjectConfig(ref: string, kind: ProjectConfigKind): Promise<unknown> {
+    const path = kind === 'pooler' || kind === 'postgres' ? `database/${kind}` : kind
+    return this.request('GET', `/v1/projects/${enc(ref)}/config/${path}`)
+  }
+
+  /** Logs Explorer query; the API only accepts windows of up to 24 hours. */
+  queryLogs(
+    ref: string,
+    options: { sql: string; start: string; end: string }
+  ): Promise<{ result?: unknown[]; error?: unknown }> {
+    const query = new URLSearchParams({
+      sql: options.sql,
+      iso_timestamp_start: options.start,
+      iso_timestamp_end: options.end,
+    })
+    return this.request('GET', `/v1/projects/${enc(ref)}/analytics/endpoints/logs?${query}`)
   }
 
   getPoolerConfig(ref: string): Promise<PoolerEntry[]> {
@@ -89,6 +174,20 @@ export class ManagementApi {
   }
 
   private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
+    const response = await this.send(method, path, body)
+    const text = await response.text()
+    if (!response.ok) throw new ManagementApiError(describeError(response.status, text), response.status)
+    return (text ? JSON.parse(text) : undefined) as T
+  }
+
+  private async requestRaw(method: string, path: string): Promise<Buffer> {
+    const response = await this.send(method, path)
+    if (!response.ok) throw new ManagementApiError(describeError(response.status, await response.text()), response.status)
+    return Buffer.from(await response.arrayBuffer())
+  }
+
+  /** Sends the request, waiting out 429 responses. */
+  private async send(method: string, path: string, body?: unknown): Promise<Response> {
     for (let attempt = 0; ; attempt++) {
       const response = await this.fetchImpl(this.baseUrl + path, {
         method,
@@ -107,10 +206,7 @@ export class ManagementApi {
         await this.sleep(waitMs)
         continue
       }
-
-      const text = await response.text()
-      if (!response.ok) throw new ManagementApiError(describeError(response.status, text), response.status)
-      return (text ? JSON.parse(text) : undefined) as T
+      return response
     }
   }
 }

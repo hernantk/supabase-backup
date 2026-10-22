@@ -1,8 +1,10 @@
 import { randomUUID } from 'crypto'
 import { getStore, loadConfig, saveConfig, makeDefaultConnection, secretCodec, type StoredAccount } from '../config'
 import { getLogger } from '../logger'
+import { emitToRenderer } from '../windowBus'
 import { ManagementApi, type RemoteProject } from './managementApi'
 import { buildDirectUrl, buildPoolerSessionUrl, pickPrimaryPooler, pickServiceKey } from '../../core/dbUrl'
+import type { CreateProjectInput } from '../../shared/managerApi'
 import type {
   AccountProject,
   AccountSummary,
@@ -36,6 +38,13 @@ function apiFor(account: StoredAccount): ManagementApi {
   const token = secretCodec.decode(account.token)
   if (!token) throw new Error(`The stored token for "${account.name}" could not be read. Remove the account and add it again.`)
   return new ManagementApi({ token })
+}
+
+/** API client for an account id, or undefined for standalone projects. Main process only. */
+export function managementApiForAccount(accountId: string | undefined): ManagementApi | undefined {
+  if (!accountId) return undefined
+  const account = readAccounts().find((a) => a.id === accountId)
+  return account ? apiFor(account) : undefined
 }
 
 // ─── Accounts ─────────────────────────────────────────────────────────────────
@@ -180,7 +189,7 @@ async function buildConnection(
   project: RemoteProject,
   dbPassword?: string
 ): Promise<ConnectionConfig> {
-  const serviceRoleKey = pickServiceKey(await api.getApiKeys(project.ref))
+  const serviceRoleKey = pickServiceKey(await api.getApiKeys(project.ref, true))
   if (!serviceRoleKey) {
     throw new Error('No service-role or secret API key is available for this project (it may be paused).')
   }
@@ -220,4 +229,79 @@ function isUntouchedPlaceholder(c: ConnectionConfig): boolean {
     !c.supabase.serviceRoleKey &&
     !c.supabase.dbUrl
   )
+}
+
+// ─── Creating projects ────────────────────────────────────────────────────────
+
+const PROVISION_POLL_MS = 6_000
+const PROVISION_GIVE_UP_MS = 20 * 60 * 1000
+
+/**
+ * Creates a project through the API and registers it right away as a connection; the service key and
+ * database URL are filled in by a watcher once Supabase reports the project as healthy.
+ */
+export async function createAccountProject(input: CreateProjectInput): Promise<{ ref: string; connectionId: string }> {
+  const account = requireAccount(input.accountId)
+  const api = apiFor(account)
+  const project = await api.createProject({
+    name: input.name,
+    organization_slug: input.organizationSlug,
+    db_pass: input.dbPassword,
+    region: input.region,
+    plan: input.plan,
+  })
+
+  const base = makeDefaultConnection(randomUUID(), project.name)
+  const connection: ConnectionConfig = {
+    ...base,
+    accountId: input.accountId,
+    projectRef: project.ref,
+    supabase: { url: `https://${project.ref}.supabase.co`, serviceRoleKey: '', dbUrl: '' },
+  }
+  const config = loadConfig()
+  saveConfig({ ...config, connections: [...config.connections.filter((c) => !isUntouchedPlaceholder(c)), connection] })
+
+  void watchProvisioning(api, connection.id, project.ref, input.dbPassword)
+  return { ref: project.ref, connectionId: connection.id }
+}
+
+async function watchProvisioning(api: ManagementApi, connectionId: string, ref: string, password: string): Promise<void> {
+  const logger = getLogger()
+  const deadline = Date.now() + PROVISION_GIVE_UP_MS
+
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, PROVISION_POLL_MS))
+    try {
+      const current = (await api.listProjects()).find((p) => p.ref === ref)
+      if (!current) {
+        logger.warn(`Provisioning watcher: project ${ref} disappeared`)
+        return
+      }
+      if (current.status === 'INIT_FAILED') {
+        logger.error(`Project ${ref} failed to initialise`)
+        emitToRenderer('manager:changed', {})
+        return
+      }
+      if (current.status !== 'ACTIVE_HEALTHY') {
+        emitToRenderer('manager:changed', {})
+        continue
+      }
+
+      const serviceRoleKey = pickServiceKey(await api.getApiKeys(ref, true)) ?? ''
+      const { dbUrl } = await resolveDbUrl(api, ref, password)
+      const config = loadConfig()
+      saveConfig({
+        ...config,
+        connections: config.connections.map((c) =>
+          c.id === connectionId ? { ...c, supabase: { ...c.supabase, serviceRoleKey, dbUrl } } : c
+        ),
+      })
+      logger.info(`Project ${ref} is ready and connected`)
+      emitToRenderer('manager:changed', {})
+      return
+    } catch (err: any) {
+      logger.warn(`Provisioning watcher for ${ref}: ${err.message}`)
+    }
+  }
+  logger.warn(`Gave up waiting for project ${ref}; set its database password manually when it is ready`)
 }

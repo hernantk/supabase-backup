@@ -58,6 +58,7 @@ interface AppConfig {
     startWithSystem: boolean
     catchUpMissed: boolean
     appearance: 'system' | 'light' | 'dark'
+    language: 'system' | 'en' | 'pt-BR'
   }
 }
 

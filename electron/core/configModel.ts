@@ -6,9 +6,11 @@ export const DEFAULT_SETTINGS: AppSettings = {
   startWithSystem: false,
   catchUpMissed: true,
   appearance: 'system',
+  language: 'system',
 }
 
 const APPEARANCES: string[] = ['system', 'light', 'dark']
+const LANGUAGES: string[] = ['system', 'en', 'pt-BR']
 
 export const MIN_CONCURRENCY = 1
 export const MAX_CONCURRENCY = 16
@@ -65,6 +67,7 @@ export function migrateConfig(raw: any, defaults: ConfigDefaults): AppConfig {
       ...(raw.settings ?? {}),
       maxConcurrentBackups: clampConcurrency(raw.settings?.maxConcurrentBackups),
       appearance: APPEARANCES.includes(raw.settings?.appearance) ? raw.settings.appearance : DEFAULT_SETTINGS.appearance,
+      language: LANGUAGES.includes(raw.settings?.language) ? raw.settings.language : DEFAULT_SETTINGS.language,
     },
   }
 }

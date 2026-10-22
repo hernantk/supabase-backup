@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { JobInfo, BatchSummary, QueueEvent } from './core/jobQueue'
+import type { ManagerApi, ManagerMethod } from './shared/managerApi'
 
 export type { JobInfo, BatchSummary, QueueEvent }
 
@@ -11,6 +12,8 @@ export interface ConnectionConfig {
   /** Set when the project was imported from a Supabase account (Management API). */
   accountId?: string
   projectRef?: string
+  /** Production safety: writes and schema changes from the Manager need an explicit confirmation. */
+  protected?: boolean
   supabase: {
     url: string
     serviceRoleKey: string
@@ -58,6 +61,7 @@ export interface AppSettings {
   /** Run a scheduled backup that was missed because the PC was off or asleep. */
   catchUpMissed: boolean
   appearance: 'system' | 'light' | 'dark'
+  language: 'system' | 'en' | 'pt-BR'
 }
 
 export interface AppConfig {
@@ -248,6 +252,10 @@ export interface ElectronAPI {
   cancelJob: (jobId: string) => Promise<boolean>
   cancelBatch: (batchId: string) => Promise<number>
 
+  // Manager (typed by ManagerApi, validated in the main process)
+  manager: <K extends ManagerMethod>(method: K, payload: ManagerApi[K]['in']) => Promise<ManagerApi[K]['out']>
+  onManagerChanged: (callback: () => void) => () => void
+
   // Accounts
   listAccounts: () => Promise<AccountSummary[]>
   addAccount: (name: string, token: string) => Promise<AccountSummary>
@@ -316,6 +324,14 @@ const electronAPI: ElectronAPI = {
   getJobs: () => ipcRenderer.invoke('backup:jobs'),
   cancelJob: (jobId) => ipcRenderer.invoke('backup:cancel-job', jobId),
   cancelBatch: (batchId) => ipcRenderer.invoke('backup:cancel-batch', batchId),
+
+  // Manager
+  manager: (method, payload) => ipcRenderer.invoke('manager:call', method, payload),
+  onManagerChanged: (callback) => {
+    const handler = () => callback()
+    ipcRenderer.on('manager:changed', handler)
+    return () => ipcRenderer.removeListener('manager:changed', handler)
+  },
 
   // Accounts
   listAccounts: () => ipcRenderer.invoke('accounts:list'),
