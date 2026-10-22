@@ -32,7 +32,7 @@ export function createNewConnection(): ConnectionConfig {
 // ─── Default config ───────────────────────────────────────────────────────────
 
 const defaultConfig: AppConfig = {
-  connections: [makeDefaultConnection()],
+  connections: [],
   destinations: {
     local: { enabled: true, path: path.join(app.getPath('documents'), 'SupabaseBackups') },
     s3: {

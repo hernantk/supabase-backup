@@ -34,16 +34,23 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Unit tests
+        run: npm test
+
       - name: Build and package
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm run build
 
+      # Only the installers and the update manifests; the unpacked app folder is not needed.
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: installer-${{ runner.os }}
-          path: release/
+          path: |
+            release/*.exe
+            release/*.exe.blockmap
+            release/*.AppImage
+            release/*.deb
+            release/latest*.yml
           retention-days: 7
 
   create-release:

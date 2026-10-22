@@ -52,8 +52,8 @@ export async function listProjects(): Promise<ProjectsOverview> {
   )
 
   const projects: ManagedProject[] = config.connections
-    // The untouched first-launch placeholder is noise once real projects exist.
-    .filter((c) => c.supabase.url || c.supabase.dbUrl || config.connections.length === 1)
+    // A project added in Settings but not filled in yet has nothing to manage.
+    .filter((c) => c.supabase.url || c.supabase.dbUrl)
     .map((c) => {
       const live = c.projectRef ? statuses.get(c.projectRef) : undefined
       return {
