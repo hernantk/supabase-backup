@@ -1,17 +1,38 @@
 import { Client, type FieldDef, type QueryResult as PgResult } from 'pg'
 import { toQueryResult } from '../../core/queryResult'
+import { isTlsRefusal, shouldTryTlsFirst } from '../../core/pgSsl'
 import type { QueryResult } from '../../shared/managerApi'
 
 const CONNECT_TIMEOUT_MS = 15_000
 const STATEMENT_TIMEOUT_MS = 120_000
 
-function isLocal(url: string): boolean {
+function newClient(dbUrl: string, tls: boolean): Client {
+  return new Client({
+    connectionString: dbUrl,
+    ssl: tls ? { rejectUnauthorized: false } : undefined,
+    connectionTimeoutMillis: CONNECT_TIMEOUT_MS,
+    statement_timeout: STATEMENT_TIMEOUT_MS,
+  })
+}
+
+/**
+ * Connects with TLS first (Supabase only accepts it) and, when the server says it has no TLS support,
+ * as self-hosted Postgres often does, once more without. Only the connection step is retried, so a
+ * statement is never executed twice.
+ */
+async function connect(dbUrl: string): Promise<Client> {
+  const tryTls = shouldTryTlsFirst(dbUrl)
+  const first = newClient(dbUrl, tryTls)
   try {
-    const host = new URL(url).hostname
-    return host === 'localhost' || host === '127.0.0.1' || host === '::1'
-  } catch {
-    return false
+    await first.connect()
+    return first
+  } catch (err) {
+    await first.end().catch(() => undefined)
+    if (!tryTls || !isTlsRefusal(err)) throw err
   }
+  const plain = newClient(dbUrl, false)
+  await plain.connect()
+  return plain
 }
 
 /**
@@ -19,16 +40,8 @@ function isLocal(url: string): boolean {
  * READ ONLY transaction so the database itself refuses writes, whatever the text looks like.
  */
 export async function runPg(dbUrl: string, sql: string, readOnly: boolean): Promise<QueryResult> {
-  const client = new Client({
-    connectionString: dbUrl,
-    // Supabase only accepts TLS. An explicit sslmode in the URL wins.
-    ssl: /sslmode=/i.test(dbUrl) || isLocal(dbUrl) ? undefined : { rejectUnauthorized: false },
-    connectionTimeoutMillis: CONNECT_TIMEOUT_MS,
-    statement_timeout: STATEMENT_TIMEOUT_MS,
-  })
-
   const started = Date.now()
-  await client.connect()
+  const client = await connect(dbUrl)
   try {
     if (readOnly) await client.query('BEGIN READ ONLY')
     let outcome: PgResult | PgResult[]
