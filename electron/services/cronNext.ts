@@ -130,3 +130,38 @@ export function getNextCronRun(expression: string, from: Date = new Date()): Dat
 
   return null
 }
+
+/** Latest date at or before `from` that matches the expression, or null if none within ~5 years. */
+export function getPreviousCronRun(expression: string, from: Date = new Date()): Date | null {
+  let spec: ReturnType<typeof parse>
+  try {
+    spec = parse(expression)
+  } catch {
+    return null
+  }
+
+  const seconds = [...spec.second].sort((a, b) => b - a)
+  const minutes = [...spec.minute].sort((a, b) => b - a)
+  const hours = [...spec.hour].sort((a, b) => b - a)
+
+  const day = new Date(from)
+  day.setHours(0, 0, 0, 0)
+
+  for (let i = 0; i < 366 * 5; i++, day.setDate(day.getDate() - 1)) {
+    if (!spec.month.has(day.getMonth() + 1)) continue
+    if (!spec.dom.has(day.getDate())) continue
+    if (!spec.dow.has(day.getDay())) continue
+
+    for (const h of hours) {
+      for (const m of minutes) {
+        for (const s of seconds) {
+          const candidate = new Date(day)
+          candidate.setHours(h, m, s, 0)
+          if (candidate.getTime() <= from.getTime()) return candidate
+        }
+      }
+    }
+  }
+
+  return null
+}

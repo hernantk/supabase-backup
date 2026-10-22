@@ -3,6 +3,9 @@ import { startBackup, defaultBackupOptions, isBackupPending } from './backup/bac
 import { loadConfig } from './config'
 import { getLogger } from './logger'
 import { getNextCronRun, validateCronExpression } from './cronNext'
+import { ensureTracked, forgetSchedule, getScheduleState, recordFired } from './scheduleState'
+import { getBackupHistory } from './history'
+import { findMissedRun } from '../core/catchUp'
 import type { AppConfig, CronValidation, SchedulerStatus } from '../preload'
 
 // ─── Task registry ────────────────────────────────────────────────────────────
@@ -47,6 +50,8 @@ export function syncSchedules(config: AppConfig): void {
     if (!shouldBeActive.has(id)) {
       entry.task.stop()
       scheduledTasks.delete(id)
+      // A schedule that is switched off and on again starts fresh: nothing in between counts as missed.
+      forgetSchedule(id)
       logger.info(`Scheduler stopped for: ${entry.connectionName}`)
     }
   }
@@ -64,6 +69,7 @@ export function syncSchedules(config: AppConfig): void {
     // Stop stale task if cron changed
     existing?.task.stop()
 
+    ensureTracked(id)
     scheduledTasks.set(id, {
       task: cron.schedule(cronExpr, () => enqueueRun(id)),
       cron: cronExpr,
@@ -80,6 +86,40 @@ export function syncSchedules(config: AppConfig): void {
 export function initScheduler(config: AppConfig): void {
   syncSchedules(config)
   getLogger().info(`Scheduler initialized (${scheduledTasks.size} active tasks)`)
+}
+
+/** Occurrences older than this are skipped rather than caught up. */
+const CATCH_UP_MAX_AGE_MS = 24 * 60 * 60 * 1000
+
+/**
+ * Runs the scheduled backups that were due while the app was not running (PC off, asleep, app closed).
+ * At most one catch-up per project, however many occurrences were missed.
+ */
+export function runCatchUp(now: Date = new Date()): number {
+  const logger = getLogger()
+  if (!loadConfig().settings.catchUpMissed) return 0
+
+  const history = getBackupHistory()
+  let started = 0
+
+  for (const [id, entry] of scheduledTasks) {
+    const state = getScheduleState(id) ?? ensureTracked(id, now)
+    const lastSuccess = history.find((r) => r.connectionId === id && r.status === 'success')
+    const missed = findMissedRun({
+      cron: entry.cron,
+      lastFiredAt: state.lastFiredAt,
+      lastSuccessAt: lastSuccess?.timestamp,
+      trackedSince: state.trackedSince,
+      now,
+      maxAgeMs: CATCH_UP_MAX_AGE_MS,
+    })
+    if (!missed) continue
+
+    logger.info(`Catching up "${entry.connectionName}": the ${missed.toISOString()} run was missed`)
+    enqueueRun(id)
+    started++
+  }
+  return started
 }
 
 /** Stop all running scheduled tasks. */
@@ -139,6 +179,7 @@ function enqueueRun(connectionId: string): void {
   if (!conn || !conn.schedule.enabled) return
 
   logger.info(`Scheduled backup triggered for: ${conn.name}`)
+  recordFired(connectionId)
   const startedAt = new Date().toISOString()
 
   try {

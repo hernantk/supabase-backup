@@ -52,6 +52,11 @@ export interface DestinationConfig {
 export interface AppSettings {
   /** Backups allowed to run at the same time across all projects. */
   maxConcurrentBackups: number
+  /** Closing the window keeps the app (and its schedules) running in the tray. */
+  closeToTray: boolean
+  startWithSystem: boolean
+  /** Run a scheduled backup that was missed because the PC was off or asleep. */
+  catchUpMissed: boolean
 }
 
 export interface AppConfig {

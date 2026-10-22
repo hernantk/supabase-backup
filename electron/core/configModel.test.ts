@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { migrateConfig, mapSecrets, clampConcurrency, type ConfigDefaults } from './configModel'
+import { migrateConfig, mapSecrets, clampConcurrency, DEFAULT_SETTINGS, type ConfigDefaults } from './configModel'
 import type { AppConfig, ConnectionConfig } from '../preload'
 
 function connection(overrides: Partial<ConnectionConfig> = {}): ConnectionConfig {
@@ -31,7 +31,7 @@ const baseConfig: AppConfig = {
     azure: { enabled: false, container: '', connectionString: '' },
   },
   notifications: { enabled: false, webhookUrl: '', onSuccess: true, onFailure: true },
-  settings: { maxConcurrentBackups: 2 },
+  settings: { ...DEFAULT_SETTINGS },
 }
 
 let counter = 0
@@ -75,7 +75,7 @@ describe('migrateConfig', () => {
     expect(migrated.connections[0].id).toBe('a')
     expect(migrated.connections[1].id).toMatch(/^generated-/)
     expect(migrated.connections.every((c) => c.accountId === undefined)).toBe(true)
-    expect(migrated.settings).toEqual({ maxConcurrentBackups: 2 })
+    expect(migrated.settings).toEqual(DEFAULT_SETTINGS)
   })
 
   it('is idempotent on a v2 config', () => {
@@ -85,7 +85,7 @@ describe('migrateConfig', () => {
   })
 
   it('clamps an out-of-range concurrency setting', () => {
-    const migrated = migrateConfig({ ...baseConfig, settings: { maxConcurrentBackups: 999 } }, defaults)
+    const migrated = migrateConfig({ ...baseConfig, settings: { ...DEFAULT_SETTINGS, maxConcurrentBackups: 999 } }, defaults)
     expect(migrated.settings.maxConcurrentBackups).toBe(16)
   })
 })

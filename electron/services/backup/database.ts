@@ -25,6 +25,11 @@ export async function dumpDatabase(
   signal?: AbortSignal
 ): Promise<string> {
   const logger = getLogger()
+  if (!config.dbUrl?.trim()) {
+    throw new Error(
+      'No database URL is configured for this project. Set the database password (Accounts) or the Database URL (Settings).'
+    )
+  }
   const outputFile = path.join(outputDir, `database_${label}_${Date.now()}.sql`)
 
   if (!fs.existsSync(outputDir)) {

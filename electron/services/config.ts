@@ -76,8 +76,19 @@ export interface StoredAccount {
   createdAt: string
 }
 
-const store = new Store<{ config: AppConfig; history: any[]; accounts: StoredAccount[] }>({
-  defaults: { config: defaultConfig, history: [], accounts: [] },
+/** Per-project bookkeeping the scheduler needs to detect runs missed while the app was not running. */
+export interface ScheduleStateEntry {
+  trackedSince: string
+  lastFiredAt?: string
+}
+
+const store = new Store<{
+  config: AppConfig
+  history: any[]
+  accounts: StoredAccount[]
+  scheduleState: Record<string, ScheduleStateEntry>
+}>({
+  defaults: { config: defaultConfig, history: [], accounts: [], scheduleState: {} },
   // Obfuscation of the file only; real protection of secrets comes from safeStorage (see secretCodec).
   encryptionKey: 'supabase-backup-encryption-key',
 })

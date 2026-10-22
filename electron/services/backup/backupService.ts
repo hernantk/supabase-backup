@@ -15,10 +15,24 @@ import type {
 
 export const BACKUP_JOB_KIND = 'backup'
 
+let activityListener: ((running: number, queued: number) => void) | undefined
+
+/** Lets the main process (tray tooltip) follow queue activity without going through the renderer. */
+export function onBackupActivity(listener: (running: number, queued: number) => void): void {
+  activityListener = listener
+}
+
 const queue = new JobQueue<BackupProgress>({
   concurrency: 2,
   onEvent: (event) => {
     emitToRenderer('jobs:event', event)
+    if (event.type === 'job' && activityListener) {
+      const jobs = queue.list()
+      activityListener(
+        jobs.filter((j) => j.state === 'running').length,
+        jobs.filter((j) => j.state === 'queued').length
+      )
+    }
     // Keep the single-backup events alive for screens that have not moved to the queue yet.
     if (event.type === 'progress') {
       emitToRenderer('backup:progress', withJobIds(event.progress, event.job))

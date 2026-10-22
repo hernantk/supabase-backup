@@ -1,6 +1,11 @@
 import type { AppConfig, AppSettings, ConnectionConfig } from '../preload'
 
-export const DEFAULT_SETTINGS: AppSettings = { maxConcurrentBackups: 2 }
+export const DEFAULT_SETTINGS: AppSettings = {
+  maxConcurrentBackups: 2,
+  closeToTray: true,
+  startWithSystem: false,
+  catchUpMissed: true,
+}
 
 export const MIN_CONCURRENCY = 1
 export const MAX_CONCURRENCY = 16

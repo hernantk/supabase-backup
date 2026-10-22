@@ -52,7 +52,12 @@ interface AppConfig {
   notifications: {
     enabled: boolean; webhookUrl: string; onSuccess: boolean; onFailure: boolean
   }
-  settings: { maxConcurrentBackups: number }
+  settings: {
+    maxConcurrentBackups: number
+    closeToTray: boolean
+    startWithSystem: boolean
+    catchUpMissed: boolean
+  }
 }
 
 const CRON_PRESETS = [
@@ -69,7 +74,7 @@ export function Settings() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
-  const [activeTab, setActiveTab] = useState<'connections' | 'destinations' | 'notifications' | 'pgdump'>('connections')
+  const [activeTab, setActiveTab] = useState<'general' | 'connections' | 'destinations' | 'notifications' | 'pgdump'>('connections')
 
   // Connection editor state
   const [expandedId, setExpandedId] = useState<string | null>(null)
@@ -245,6 +250,7 @@ export function Settings() {
   }
 
   const tabs = [
+    { key: 'general',       label: 'General',       icon: <Settings2 size={14} /> },
     { key: 'connections',   label: 'Connections',   icon: <Server size={14} /> },
     { key: 'destinations',  label: 'Destinations',  icon: <Database size={14} /> },
     { key: 'notifications', label: 'Notifications', icon: <Settings2 size={14} /> },
@@ -278,6 +284,58 @@ export function Settings() {
           </button>
         ))}
       </div>
+
+      {/* ── General tab ──────────────────────────────────────────────────────── */}
+      {activeTab === 'general' && (
+        <div className="card space-y-6">
+          <div>
+            <h3 className="font-medium text-surface-200 mb-1">Parallel backups</h3>
+            <p className="text-sm text-surface-400 mb-3">
+              How many projects are backed up at the same time. The same project never runs twice at once;
+              extra backups wait in the queue.
+            </p>
+            <div className="flex items-center gap-3">
+              <input
+                type="number" min={1} max={16} className="input w-24"
+                value={config.settings.maxConcurrentBackups}
+                onChange={(e) => {
+                  const n = Math.min(16, Math.max(1, Math.floor(Number(e.target.value) || 1)))
+                  setConfig({ ...config, settings: { ...config.settings, maxConcurrentBackups: n } })
+                }}
+              />
+              <span className="text-xs text-surface-500">1 – 16 (each backup uses disk space for its temporary files)</span>
+            </div>
+          </div>
+
+          <div className="space-y-3 border-t border-surface-700 pt-5">
+            <h3 className="font-medium text-surface-200">Background</h3>
+            {([
+              ['closeToTray', 'Keep running in the tray when the window is closed', 'Scheduled backups only run while the app is running.'],
+              ['startWithSystem', 'Start with the system', 'Starts hidden in the tray when you log in (installed app only).'],
+              ['catchUpMissed', 'Run missed scheduled backups', 'If the PC was off or asleep at the scheduled time, run one backup when the app is back (up to 24 h late).'],
+            ] as const).map(([key, label, hint]) => (
+              <label key={key} className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox" className="mt-1 w-4 h-4 rounded border-surface-600 bg-surface-800 text-brand-500"
+                  checked={config.settings[key]}
+                  onChange={(e) => setConfig({ ...config, settings: { ...config.settings, [key]: e.target.checked } })}
+                />
+                <span>
+                  <span className="block text-sm text-surface-200">{label}</span>
+                  <span className="block text-xs text-surface-500">{hint}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+
+          <div className="flex justify-end">
+            <button onClick={handleSave} disabled={saving} className="btn-primary flex items-center gap-2 text-sm">
+              {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+              {saved ? 'Saved' : 'Save'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── Connections tab ──────────────────────────────────────────────────── */}
       {activeTab === 'connections' && (

@@ -1,4 +1,5 @@
-import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from 'react'
+import { useJobs } from './JobsContext'
 
 interface BackupProgress {
   stage: 'database' | 'storage' | 'compress' | 'encrypt' | 'upload'
@@ -8,6 +9,7 @@ interface BackupProgress {
 
 interface BackupResult {
   id: string
+  connectionId?: string
   success: boolean
   error?: string
   timestamp: string
@@ -37,72 +39,83 @@ interface BackupContextType extends BackupState {
 
 const BackupContext = createContext<BackupContextType | null>(null)
 
+/**
+ * Single-backup view used by the Run Backup page. Several backups can run at once, so it follows
+ * the project the user started (or, when idle, whichever backup is running) and ignores the rest.
+ */
 export function BackupProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<BackupState>({
-    isRunning: false,
-    progress: null,
+  const { jobs, cancelJob } = useJobs()
+  const [starting, setStarting] = useState(false)
+  const [outcome, setOutcome] = useState<{ result: BackupResult | null; error: string | null }>({
     result: null,
     error: null,
   })
+  const trackedRef = useRef<string | null>(null)
 
-  // Track calls to prevent stale closure issues
-  const stateRef = useRef(state)
-  stateRef.current = state
+  const current = useMemo(() => {
+    const active = jobs.filter((j) => j.state === 'queued' || j.state === 'running')
+    const tracked = trackedRef.current
+    if (tracked) return active.find((j) => j.key === tracked)
+    return active.find((j) => j.state === 'running') ?? active[0]
+  }, [jobs, starting])
 
-  // ── Listen for backup events globally ───────────────────────────────────────
   useEffect(() => {
-    const unsubProgress = window.electronAPI.onBackupProgress((p) => {
-      // Also flips isRunning on, so scheduled (main-process) runs show up in the mini progress widget
-      setState((prev) => ({ ...prev, isRunning: true, progress: p }))
-    })
-
-    const unsubComplete = window.electronAPI.onBackupComplete((result) => {
-      setState((prev) => ({
-        ...prev,
-        isRunning: false,
-        result: result.success ? result : null,
+    return window.electronAPI.onBackupComplete((result) => {
+      const tracked = trackedRef.current
+      if (tracked && result.connectionId !== tracked) return
+      setOutcome({
+        result: result.success ? (result as BackupResult) : null,
         error: result.success ? null : (result.error ?? 'Backup failed'),
-      }))
+      })
     })
-
-    return () => { unsubProgress(); unsubComplete() }
   }, [])
 
-  const startBackup = useCallback(async (
-    connectionId: string,
-    options: { include: ('database' | 'storage')[]; destinations: string[]; compress: boolean; encrypt: boolean }
-  ): Promise<BackupResult> => {
-    setState({ isRunning: true, progress: null, result: null, error: null })
+  const startBackup = useCallback(
+    async (
+      connectionId: string,
+      options: { include: ('database' | 'storage')[]; destinations: string[]; compress: boolean; encrypt: boolean }
+    ): Promise<BackupResult> => {
+      trackedRef.current = connectionId
+      setOutcome({ result: null, error: null })
+      setStarting(true)
 
-    try {
-      const result = await window.electronAPI.runBackup({ connectionId, ...options })
-      setState((prev) => ({
-        ...prev,
-        isRunning: false,
-        result: result.success ? result : null,
-        error: result.success ? null : (result.error ?? 'Backup failed'),
-      }))
-      return result as any
-    } catch (err: any) {
-      setState({ isRunning: false, progress: null, result: null, error: err.message ?? 'Backup failed' })
-      throw err
-    }
-  }, [])
+      try {
+        const result = await window.electronAPI.runBackup({ connectionId, ...options })
+        setOutcome({
+          result: result.success ? (result as BackupResult) : null,
+          error: result.success ? null : (result.error ?? 'Backup failed'),
+        })
+        return result as BackupResult
+      } catch (err: any) {
+        setOutcome({ result: null, error: err.message ?? 'Backup failed' })
+        throw err
+      } finally {
+        trackedRef.current = null
+        setStarting(false)
+      }
+    },
+    []
+  )
 
   const cancelBackup = useCallback(async () => {
-    await window.electronAPI.cancelBackup()
-    setState({ isRunning: false, progress: null, result: null, error: 'Backup cancelled' })
-  }, [])
+    if (current) await cancelJob(current.id)
+    else await window.electronAPI.cancelBackup()
+    setOutcome({ result: null, error: 'Backup cancelled' })
+  }, [current, cancelJob])
 
-  const clearState = useCallback(() => {
-    setState({ isRunning: false, progress: null, result: null, error: null })
-  }, [])
+  const clearState = useCallback(() => setOutcome({ result: null, error: null }), [])
 
-  return (
-    <BackupContext.Provider value={{ ...state, startBackup, cancelBackup, clearState }}>
-      {children}
-    </BackupContext.Provider>
-  )
+  const value: BackupContextType = {
+    isRunning: starting || !!current,
+    progress: current?.progress ?? null,
+    result: outcome.result,
+    error: outcome.error,
+    startBackup,
+    cancelBackup,
+    clearState,
+  }
+
+  return <BackupContext.Provider value={value}>{children}</BackupContext.Provider>
 }
 
 export function useBackup(): BackupContextType {

@@ -16,6 +16,7 @@ import { testSupabaseConnection } from './services/backup/database'
 import { testDestination } from './services/destinations/tester'
 import { syncSchedules, stopAllSchedulers, getSchedulerStatus, validateCron } from './services/scheduler'
 import { queryLogs } from './services/logger'
+import { applyStartWithSystem } from './services/autostart'
 import {
   listAccounts,
   addAccount,
@@ -113,6 +114,7 @@ export function setupIpcHandlers(mainWindow: BrowserWindow | null) {
   ipcMain.handle('config:save', async (_event, config: AppConfig) => {
     saveConfig(config)
     applyBackupSettings(config)
+    applyStartWithSystem(config.settings.startWithSystem)
     // Automatically reconcile all scheduled tasks whenever config is saved
     syncSchedules(config)
   })
