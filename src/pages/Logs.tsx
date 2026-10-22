@@ -52,7 +52,7 @@ export function Logs() {
         />
         {tab === 'app' && (
           <Segmented
-            label="level"
+            label={t('logs.levels.all')}
             value={level}
             onChange={setLevel}
             options={[

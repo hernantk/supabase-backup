@@ -14,9 +14,10 @@ import settings from './settings'
 import restore from './restore'
 import tableEditor from './tables'
 import insights from './insights'
+import pgdump from './pgdump'
 
 /** Every feature's messages. Add new files here; both languages are derived from this list. */
-const all = { common, nav, projects, sql, authUsers, storage, secrets, backups, dashboard, logs, accounts, miniProgress, settings, restore, tableEditor, insights }
+const all = { common, nav, projects, sql, authUsers, storage, secrets, backups, dashboard, logs, accounts, miniProgress, settings, restore, tableEditor, insights, pgdump }
 
 type All = typeof all
 

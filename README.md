@@ -1,22 +1,37 @@
-# Supabase Backup
+# Supabase Backup — Manager 2.0
 
-A cross-platform desktop application for backing up and restoring Supabase projects (PostgreSQL database + Storage buckets) to multiple destinations — Local, AWS S3, Google Cloud Storage, and Azure Blob Storage.
+A local, multi-account **Supabase Manager** for Windows and Linux, with scheduled and parallel backups.
+Everything runs on your computer: no server, no telemetry. Tokens and keys are encrypted with the OS keychain.
 
-Built with **Electron + React + TypeScript + Vite**.
+Built with **Electron + React + TypeScript + Vite**. Light and dark themes follow the system; the UI is available in English and Brazilian Portuguese.
 
 ---
 
-## Features
+## What it does
 
-- Multiple named connections (back up several Supabase projects independently)
-- Per-connection scheduled backups (cron-based, runs in the background)
-- Destinations: Local folder, AWS S3 / S3-compatible, Google Cloud Storage, Azure Blob
-- Compression (tar.gz) and AES-256 encryption
-- Retention policy (keep last N backups per destination)
-- Database restore with a destructive-action confirmation modal
-- Bundled `pg_dump` / `psql` for Windows — no system PostgreSQL required
-- Webhook notifications on success or failure
-- Windows (NSIS installer) and Linux (AppImage, .deb) builds
+**Accounts and projects**
+- Connect several Supabase accounts with a personal access token; import their projects in one click.
+- Standalone projects (service-role key and database URL, no account) keep working.
+- Sidebar tree *account → projects* with live status; create, pause, restore and delete projects.
+
+**Backups**
+- Back up many projects **at the same time** (configurable concurrency); the same project never runs twice at once.
+- Queue with per-job progress, cancel one job or a whole batch, one summary notification per batch.
+- Scheduled backups per project (cron), running in the tray; **missed runs are caught up** when the PC was off or asleep.
+- Content: database (`pg_dump`), Storage files, Edge Functions and project configuration (secret *names* only).
+- Destinations: local folder, AWS S3 / S3-compatible, Google Cloud Storage, Azure Blob. Compression, AES-256 encryption.
+- Retention: keep the last *N*, or layered (last *N* + one per day/week/month).
+
+**Restore**
+- Restore into **any** registered project, even one in another account; database and storage separately.
+- Or restore into a **new project**: it is created, and the backup is restored as soon as it is ready.
+- Typed-name confirmation, encrypted backups supported.
+
+**Manager** (per project)
+- **SQL editor** — read-only by default (enforced by the database), history, saved queries, CSV/JSON export.
+- **Table editor** — browse, sort, filter, edit cells, insert and delete rows.
+- **Auth** users, **Storage** browser, **Edge Functions**, **Logs**, **Schema** (tables, migrations, diff between two projects), **Secrets** and API keys.
+- **Protected projects**: writes and destructive statements ask for confirmation (destructive ones need the project name). Everything the Manager changes is recorded in Activity.
 
 ---
 
@@ -24,158 +39,106 @@ Built with **Electron + React + TypeScript + Vite**.
 
 | Tool | Version |
 |---|---|
-| Node.js | 18 or later |
+| Node.js | 18 or later (22 recommended) |
 | npm | 9 or later |
-| Git | any |
-| (Windows) pg_dump | auto-downloaded via the app, or installed via winget |
-| (Linux) pg_dump | `sudo apt install postgresql-client-16` |
+| `pg_dump` / `psql` | detected automatically; on Windows the app can download them or install via winget |
+
+On Linux install the PostgreSQL client yourself (`sudo apt install postgresql-client-16`).
 
 ---
 
 ## Development
 
 ```bash
-# 1. Clone the repository
 git clone https://github.com/hernantk/supabase-backup.git
 cd supabase-backup
-
-# 2. Install dependencies
 npm install
-
-# 3. Run in development mode (hot reload)
-npm run dev
+npm run electron:dev     # Vite + Electron with hot reload
 ```
 
-The app opens an Electron window with Vite HMR. Changes to `src/` (React) rebuild instantly; changes to `electron/` require a full restart (`Ctrl+C`, then `npm run dev` again).
+Useful scripts:
+
+```bash
+npm run typecheck        # tsc --noEmit
+npm test                 # unit tests (Vitest)
+npm run icon             # regenerates resources/icon.png and the SVG icon
+npm run build            # type-check, build, package installers into release/
+```
+
+> `electron:dev` waits for the dev server on port 5173. If another dev server already uses that port,
+> Vite moves to the next one and Electron follows it through `VITE_DEV_SERVER_URL`.
+
+### Project structure
+
+```
+electron/
+  main.ts, ipc.ts, preload.ts      entry, IPC registration, typed bridge
+  ipc/managerRoutes.ts             Manager API: one typed channel, every payload validated with zod
+  shared/managerApi.ts             the Manager contract (types only, shared with the renderer)
+  core/                            pure, unit-tested logic: job queue, retention, SQL classifier/builder,
+                                   catch-up, schema diff, config migration, secret codec, …
+  services/
+    backup/                        runner (no global state), backupService (queue), restore, storage, pg_dump
+    manager/                       projects, SQL, tables, auth, storage, secrets, insights
+    supabase/                      Management API client, accounts
+    destinations/                  local, S3, GCS, Azure
+    scheduler.ts, tray.ts, notify.ts, updater.ts, audit.ts, …
+src/
+  pages/                           Dashboard, Projects, project/* (workspace tabs), Backups, Restore,
+                                   Accounts, Settings, Activity
+  components/, hooks/, lib/, i18n/ UI primitives, TanStack Query hooks, typed en + pt-BR messages
+docs/V2-DESIGN.md                  design decisions
+```
+
+See [docs/V2-DESIGN.md](docs/V2-DESIGN.md) for the reasoning behind the architecture.
 
 ---
 
-## Build
-
-### Type-check only
+## Packaging and releases
 
 ```bash
-npx tsc --noEmit
+npm run build            # Windows: NSIS installer; Linux: AppImage + .deb  →  release/
 ```
 
-### Build renderer + Electron bundles (no installer)
-
-```bash
-npx vite build
-```
-
-Output:
-- `dist/` — compiled React app
-- `dist-electron/` — compiled Electron main process and preload
-
-### Package as an installer
-
-Requires **electron-builder** (already in devDependencies).
-
-```bash
-# Windows — produces a NSIS installer in release/
-npm run build:win
-
-# Linux — produces AppImage + .deb in release/
-npm run build:linux
-
-# Current platform
-npm run build
-```
-
-> **Note for Windows builds:** `resources/icon.png` is automatically converted to `.ico` by electron-builder v25. No manual conversion needed.
-
-> **Note for Linux:** `pg_dump` must be installed separately (e.g., `sudo apt install postgresql-client-16`). The app detects it from `$PATH` automatically.
-
-### Bundling pg_dump (Windows)
-
-The first time you open Settings → pg_dump on Windows, you can:
-
-1. **Download automatically** — downloads the EnterpriseDB PostgreSQL 16 ZIP and extracts only `pg_dump.exe`, `psql.exe`, and the required DLLs (~15 MB) to `resources/pg_dump/win32/`.
-2. **Install via winget** — runs `winget install PostgreSQL.PostgreSQL.16` silently.
-3. **Point to an existing binary** — browse to any `pg_dump.exe` on your system.
-
-To pre-bundle binaries before packaging, run the download once in dev mode and the files in `resources/pg_dump/win32/` will be included by `electron-builder` via `extraResources`.
+Pushing a tag `v*` runs the **Build and Release** workflow, which builds Windows and Linux installers and
+attaches them (plus `latest*.yml` for the updater) to a GitHub release. Installed apps check that release
+on start (Settings → General → Updates) and only download or install after you confirm. Installers are not
+code-signed, so Windows SmartScreen may warn on first run.
 
 ---
 
-## Project structure
+## Data and security
 
-```
-supabase-backup/
-├── electron/                  # Electron main process
-│   ├── main.ts                # Entry point
-│   ├── ipc.ts                 # All IPC handler registrations
-│   ├── preload.ts             # Context bridge + shared TypeScript types
-│   └── services/
-│       ├── backup/
-│       │   ├── database.ts    # pg_dump wrapper
-│       │   ├── restore.ts     # psql restore wrapper
-│       │   ├── runner.ts      # Backup orchestrator
-│       │   └── storage.ts     # Supabase Storage downloader
-│       ├── destinations/      # Local, S3, GCS, Azure providers
-│       ├── config.ts          # Config store (electron-store)
-│       ├── scheduler.ts       # Multi-connection cron scheduler
-│       ├── pgDumpInstaller.ts # pg_dump detect / download / winget
-│       ├── history.ts         # Backup history log
-│       ├── logger.ts          # Structured logger
-│       ├── compress.ts        # tar.gz compression
-│       ├── encrypt.ts         # AES-256 encryption
-│       ├── notify.ts          # Webhook notifications
-│       └── retention.ts       # Retention policy
-├── src/                       # React renderer
-│   ├── pages/
-│   │   ├── Dashboard.tsx
-│   │   ├── RunBackup.tsx
-│   │   ├── Restore.tsx
-│   │   ├── Settings.tsx
-│   │   └── Logs.tsx
-│   └── components/
-├── resources/
-│   ├── icon.png               # App icon (256×256, auto-converted to .ico for Windows)
-│   └── pg_dump/
-│       ├── win32/             # pg_dump.exe, psql.exe + DLLs (populated at runtime)
-│       └── linux/             # pg_dump binary (if pre-bundled)
-├── scripts/
-│   └── generate-icon.js       # Generates resources/icon.png (pure Node.js, no deps)
-├── electron-builder.yml       # Packaging config
-├── vite.config.ts             # Vite config (renderer + electron builds)
-└── LICENSE                    # Apache 2.0
-```
+- Config: `%APPDATA%\supabase-backup\config.json` (Windows) / `~/.config/supabase-backup/config.json` (Linux).
+  Secrets inside it (service-role keys, database URLs, passwords, webhook URLs) and the account tokens are
+  encrypted with Electron `safeStorage` (DPAPI, Keychain or libsecret). Without a keyring on Linux the app
+  cannot protect them and says so instead of pretending.
+- Account tokens never reach the renderer: every Management API call runs in the main process.
+- The Manager's audit log is `audit.log` next to the config; it is local and append-only.
+- Upgrading from 1.x is automatic: each connection becomes a standalone project and keeps its schedule.
 
 ---
 
-## Configuration
+## Known limits
 
-User configuration is stored via `electron-store` in the OS config directory:
-
-- **Windows:** `%APPDATA%\supabase-backup\config.json`
-- **Linux:** `~/.config/supabase-backup/config.json`
-
-Config is automatically migrated from older formats on startup.
+- Layered retention and catch-up work per project and per destination; they do not look across destinations.
+- Backup history is kept in `electron-store` (last 100 runs), not in a database.
+- Edge Function and configuration backups are archives for reference; restoring them is not automated.
+- SQL and the table editor cannot reach a standalone project without a database URL.
 
 ---
 
 ## Contributing
 
-Pull requests are welcome. For major changes, open an issue first to discuss what you'd like to change.
+Pull requests are welcome. For larger changes please open an issue first.
 
-1. Fork the repo
-2. Create a feature branch: `git checkout -b feat/my-feature`
-3. Commit your changes: `git commit -m "feat: add my feature"`
-4. Push and open a Pull Request
-
-Please follow the existing code style (TypeScript strict, no `any` where avoidable).
-
----
+1. Fork the repo and create a branch: `git checkout -b feat/my-feature`
+2. Run `npm run typecheck && npm test` before pushing
+3. Open a pull request
 
 ## Support the project
 
-If this tool saves you time or money, consider buying us a coffee:
-
 [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-hernantk-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/hernantk)
-
----
 
 ## License
 

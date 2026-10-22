@@ -4,6 +4,8 @@ export default defineMessages(
   {
     cancel: 'Cancel',
     close: 'Close',
+    minimize: 'Minimize',
+    maximize: 'Maximize',
     save: 'Save',
     saved: 'Saved',
     delete: 'Delete',
@@ -48,6 +50,8 @@ export default defineMessages(
   {
     cancel: 'Cancelar',
     close: 'Fechar',
+    minimize: 'Minimizar',
+    maximize: 'Maximizar',
     save: 'Salvar',
     saved: 'Salvo',
     delete: 'Excluir',
