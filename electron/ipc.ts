@@ -17,6 +17,14 @@ import { testDestination } from './services/destinations/tester'
 import { syncSchedules, stopAllSchedulers, getSchedulerStatus, validateCron } from './services/scheduler'
 import { queryLogs } from './services/logger'
 import {
+  listAccounts,
+  addAccount,
+  removeAccount,
+  listAccountProjects,
+  importAccountProjects,
+  setProjectDbPassword,
+} from './services/supabase/accounts'
+import {
   detectPgDump,
   downloadPgDump,
   abortDownload,
@@ -24,7 +32,7 @@ import {
   setCustomPgDumpPath,
   getLinuxInstallCommands,
 } from './services/pgDumpInstaller'
-import type { AppConfig, BackupOptions, LogQuery } from './preload'
+import type { AppConfig, BackupOptions, ImportProjectRequest, LogQuery } from './preload'
 
 export function setupIpcHandlers(mainWindow: BrowserWindow | null) {
   // ── Backup ──────────────────────────────────────────────────────────────────
@@ -48,6 +56,23 @@ export function setupIpcHandlers(mainWindow: BrowserWindow | null) {
     if (jobId) cancelJob(jobId)
     else cancelAllBackups()
   })
+
+  // ── Accounts (Management API; tokens stay in the main process) ──────────────
+  ipcMain.handle('accounts:list', async () => listAccounts())
+  ipcMain.handle('accounts:add', async (_event, name: string, token: string) => addAccount(name, token))
+  ipcMain.handle('accounts:remove', async (_event, accountId: string) => removeAccount(accountId))
+  ipcMain.handle('accounts:projects', async (_event, accountId: string) => listAccountProjects(accountId))
+  ipcMain.handle(
+    'accounts:import',
+    async (_event, accountId: string, projects: ImportProjectRequest[]) => {
+      const result = await importAccountProjects(accountId, projects)
+      syncSchedules(loadConfig())
+      return result
+    }
+  )
+  ipcMain.handle('accounts:set-db-password', async (_event, connectionId: string, password: string) =>
+    setProjectDbPassword(connectionId, password)
+  )
 
   // ── Restore ──────────────────────────────────────────────────────────────────
   ipcMain.handle('restore:run', async (_event, connectionId: string, filePath: string) => {

@@ -122,6 +122,36 @@ export interface BatchStartResult {
   skipped: string[]
 }
 
+// ─── Accounts (Supabase Management API) ───────────────────────────────────────
+
+/** What the renderer sees of an account: never the token. */
+export interface AccountSummary {
+  id: string
+  name: string
+  createdAt: string
+}
+
+export interface AccountProject {
+  ref: string
+  name: string
+  region: string
+  status: string
+  organizationId: string
+  /** Id of the project (connection) already imported from this account, if any. */
+  importedConnectionId?: string
+}
+
+export interface ImportProjectRequest {
+  ref: string
+  /** Database password. Optional: it can be set later, but backups need it. */
+  dbPassword?: string
+}
+
+export interface ImportProjectsResult {
+  imported: { ref: string; connectionId: string; hasDbUrl: boolean }[]
+  failed: { ref: string; error: string }[]
+}
+
 // ─── Supabase config (used for standalone connection tests) ───────────────────
 
 export interface SupabaseConfig {
@@ -212,6 +242,14 @@ export interface ElectronAPI {
   cancelJob: (jobId: string) => Promise<boolean>
   cancelBatch: (batchId: string) => Promise<number>
 
+  // Accounts
+  listAccounts: () => Promise<AccountSummary[]>
+  addAccount: (name: string, token: string) => Promise<AccountSummary>
+  removeAccount: (accountId: string) => Promise<void>
+  listAccountProjects: (accountId: string) => Promise<AccountProject[]>
+  importAccountProjects: (accountId: string, projects: ImportProjectRequest[]) => Promise<ImportProjectsResult>
+  setProjectDbPassword: (connectionId: string, password: string) => Promise<{ dbUrl: string; source: 'pooler' | 'direct' }>
+
   // Config
   getConfig: () => Promise<AppConfig>
   saveConfig: (config: AppConfig) => Promise<void>
@@ -272,6 +310,14 @@ const electronAPI: ElectronAPI = {
   getJobs: () => ipcRenderer.invoke('backup:jobs'),
   cancelJob: (jobId) => ipcRenderer.invoke('backup:cancel-job', jobId),
   cancelBatch: (batchId) => ipcRenderer.invoke('backup:cancel-batch', batchId),
+
+  // Accounts
+  listAccounts: () => ipcRenderer.invoke('accounts:list'),
+  addAccount: (name, token) => ipcRenderer.invoke('accounts:add', name, token),
+  removeAccount: (accountId) => ipcRenderer.invoke('accounts:remove', accountId),
+  listAccountProjects: (accountId) => ipcRenderer.invoke('accounts:projects', accountId),
+  importAccountProjects: (accountId, projects) => ipcRenderer.invoke('accounts:import', accountId, projects),
+  setProjectDbPassword: (connectionId, password) => ipcRenderer.invoke('accounts:set-db-password', connectionId, password),
 
   // Config
   getConfig: () => ipcRenderer.invoke('config:get'),

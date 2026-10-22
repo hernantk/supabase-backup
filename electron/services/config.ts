@@ -68,8 +68,16 @@ export const secretCodec = secrets
 
 // ─── Store ────────────────────────────────────────────────────────────────────
 
-const store = new Store<{ config: AppConfig; history: any[] }>({
-  defaults: { config: defaultConfig, history: [] },
+/** Account as persisted: the personal access token is encrypted and never leaves the main process. */
+export interface StoredAccount {
+  id: string
+  name: string
+  token: string
+  createdAt: string
+}
+
+const store = new Store<{ config: AppConfig; history: any[]; accounts: StoredAccount[] }>({
+  defaults: { config: defaultConfig, history: [], accounts: [] },
   // Obfuscation of the file only; real protection of secrets comes from safeStorage (see secretCodec).
   encryptionKey: 'supabase-backup-encryption-key',
 })
