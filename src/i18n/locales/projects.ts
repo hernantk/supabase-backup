@@ -264,6 +264,11 @@ export default defineMessages({
       backups: 'Backups',
       secrets: 'Segredos e chaves',
     },
+    rail: {
+      label: 'Navegação do projeto',
+      expand: 'Expandir menu',
+      collapse: 'Recolher menu',
+    },
     needsAccount: {
       title: 'Ligue uma conta para usar isto',
       body: 'Este projeto foi adicionado sem conta, por isso a Management API da Supabase não está disponível para ele. Importe-o de uma conta para desbloquear este separador.',
@@ -376,6 +381,11 @@ export default defineMessages({
       schema: 'Esquema de la base de datos',
       backups: 'Copias de seguridad',
       secrets: 'Secretos y claves',
+    },
+    rail: {
+      label: 'Navegación del proyecto',
+      expand: 'Expandir menú',
+      collapse: 'Contraer menú',
     },
     needsAccount: {
       title: 'Conecta una cuenta para usar esto',
@@ -490,6 +500,11 @@ export default defineMessages({
       backups: 'Sauvegardes',
       secrets: 'Secrets et clés',
     },
+    rail: {
+      label: 'Navigation du projet',
+      expand: 'Déplier le menu',
+      collapse: 'Replier le menu',
+    },
     needsAccount: {
       title: 'Connectez un compte pour utiliser ceci',
       body: 'Ce projet a été ajouté sans compte : la Management API de Supabase n’est donc pas disponible. Importez-le depuis un compte pour débloquer cet onglet.',
@@ -602,6 +617,11 @@ export default defineMessages({
       schema: 'Datenbankschema',
       backups: 'Backups',
       secrets: 'Secrets und Schlüssel',
+    },
+    rail: {
+      label: 'Projektnavigation',
+      expand: 'Menü ausklappen',
+      collapse: 'Menü einklappen',
     },
     needsAccount: {
       title: 'Verbinden Sie ein Konto, um dies zu nutzen',
@@ -716,6 +736,11 @@ export default defineMessages({
       backups: 'Backup',
       secrets: 'Secret e chiavi',
     },
+    rail: {
+      label: 'Navigazione del progetto',
+      expand: 'Espandi menu',
+      collapse: 'Comprimi menu',
+    },
     needsAccount: {
       title: 'Collega un account per usare questa funzione',
       body: 'Questo progetto è stato aggiunto senza account, quindi la Management API di Supabase non è disponibile. Importalo da un account per sbloccare questa scheda.',
@@ -828,6 +853,11 @@ export default defineMessages({
       schema: 'Databaseschema',
       backups: 'Back-ups',
       secrets: 'Secrets en sleutels',
+    },
+    rail: {
+      label: 'Projectnavigatie',
+      expand: 'Menu uitklappen',
+      collapse: 'Menu inklappen',
     },
     needsAccount: {
       title: 'Verbind een account om dit te gebruiken',
@@ -942,6 +972,11 @@ export default defineMessages({
       backups: 'Kopie zapasowe',
       secrets: 'Sekrety i klucze',
     },
+    rail: {
+      label: 'Nawigacja projektu',
+      expand: 'Rozwiń menu',
+      collapse: 'Zwiń menu',
+    },
     needsAccount: {
       title: 'Połącz konto, aby z tego korzystać',
       body: 'Ten projekt dodano bez konta, więc Management API Supabase nie jest dla niego dostępne. Zaimportuj go z konta, aby odblokować tę kartę.',
@@ -1054,6 +1089,11 @@ export default defineMessages({
       schema: 'Схема базы данных',
       backups: 'Резервные копии',
       secrets: 'Секреты и ключи',
+    },
+    rail: {
+      label: 'Навигация по проекту',
+      expand: 'Развернуть меню',
+      collapse: 'Свернуть меню',
     },
     needsAccount: {
       title: 'Подключите аккаунт, чтобы использовать это',
@@ -1168,6 +1208,11 @@ export default defineMessages({
       backups: 'Yedekler',
       secrets: 'Gizli bilgiler ve anahtarlar',
     },
+    rail: {
+      label: 'Proje gezintisi',
+      expand: 'Menüyü genişlet',
+      collapse: 'Menüyü daralt',
+    },
     needsAccount: {
       title: 'Bunu kullanmak için bir hesap bağlayın',
       body: 'Bu proje hesapsız eklendiği için Supabase Management API kullanılamıyor. Bu sekmenin kilidini açmak için projeyi bir hesaptan içe aktarın.',
@@ -1280,6 +1325,11 @@ export default defineMessages({
       schema: 'データベーススキーマ',
       backups: 'バックアップ',
       secrets: 'シークレットとキー',
+    },
+    rail: {
+      label: 'プロジェクトのナビゲーション',
+      expand: 'メニューを展開',
+      collapse: 'メニューを折りたたむ',
     },
     needsAccount: {
       title: 'これを使うにはアカウントを接続してください',
@@ -1394,6 +1444,11 @@ export default defineMessages({
       backups: '백업',
       secrets: '시크릿 및 키',
     },
+    rail: {
+      label: '프로젝트 탐색',
+      expand: '메뉴 펼치기',
+      collapse: '메뉴 접기',
+    },
     needsAccount: {
       title: '이 기능을 사용하려면 계정을 연결하세요',
       body: '이 프로젝트는 계정 없이 추가되어 Supabase Management API를 사용할 수 없습니다. 이 탭을 사용하려면 계정에서 가져오세요.',
@@ -1507,6 +1562,11 @@ export default defineMessages({
       backups: '备份',
       secrets: '密钥与 API 密钥',
     },
+    rail: {
+      label: '项目导航',
+      expand: '展开菜单',
+      collapse: '收起菜单',
+    },
     needsAccount: {
       title: '连接账户后才能使用',
       body: '此项目添加时未关联账户，因此无法使用 Supabase Management API。从账户导入此项目即可解锁此标签页。',
@@ -1619,6 +1679,11 @@ export default defineMessages({
       schema: 'डेटाबेस स्कीमा',
       backups: 'बैकअप',
       secrets: 'सीक्रेट और कुंजियाँ',
+    },
+    rail: {
+      label: 'प्रोजेक्ट नेविगेशन',
+      expand: 'मेनू फैलाएँ',
+      collapse: 'मेनू समेटें',
     },
     needsAccount: {
       title: 'इसे इस्तेमाल करने के लिए खाता कनेक्ट करें',
