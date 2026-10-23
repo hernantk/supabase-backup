@@ -91,6 +91,15 @@ describe('migrateConfig', () => {
     expect(dark.settings.appearance).toBe('dark')
   })
 
+  it('keeps a supported language and falls back to the system language otherwise', () => {
+    for (const language of ['system', 'en', 'pt-BR', 'pt-PT', 'de', 'ru', 'ja', 'zh-CN', 'hi']) {
+      const migrated = migrateConfig({ ...baseConfig, settings: { ...DEFAULT_SETTINGS, language } }, defaults)
+      expect(migrated.settings.language).toBe(language)
+    }
+    const unknown = migrateConfig({ ...baseConfig, settings: { ...DEFAULT_SETTINGS, language: 'xx' } }, defaults)
+    expect(unknown.settings.language).toBe('system')
+  })
+
   it('clamps an out-of-range concurrency setting', () => {
     const migrated = migrateConfig({ ...baseConfig, settings: { ...DEFAULT_SETTINGS, maxConcurrentBackups: 999 } }, defaults)
     expect(migrated.settings.maxConcurrentBackups).toBe(16)

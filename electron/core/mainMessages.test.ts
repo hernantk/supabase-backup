@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { batchNotificationText, resolveMainLanguage, translate } from './mainMessages'
+import { batchNotificationText, resolveMainLanguage, translate, translateCount } from './mainMessages'
 
 describe('translate', () => {
   it('fills placeholders and keeps unknown ones visible', () => {
@@ -12,9 +12,24 @@ describe('translate', () => {
 describe('resolveMainLanguage', () => {
   it('follows the OS locale only for "system"', () => {
     expect(resolveMainLanguage('system', 'pt-BR')).toBe('pt-BR')
-    expect(resolveMainLanguage('system', 'pt-PT')).toBe('pt-BR')
+    expect(resolveMainLanguage('system', 'pt-PT')).toBe('pt-PT')
+    expect(resolveMainLanguage('system', 'es-MX')).toBe('es')
     expect(resolveMainLanguage('system', 'en-US')).toBe('en')
+    expect(resolveMainLanguage('system', 'sv-SE')).toBe('en')
     expect(resolveMainLanguage('en', 'pt-BR')).toBe('en')
+    expect(resolveMainLanguage('ja', 'en-US')).toBe('ja')
+  })
+})
+
+describe('translateCount', () => {
+  it('uses the plural form of the language', () => {
+    expect(translateCount('en', 'quit.message', 1)).toBe('1 backup is still running or queued.')
+    expect(translateCount('en', 'quit.message', 3)).toBe('3 backups are still running or queued.')
+    expect(translateCount('ru', 'quit.message', 21)).toMatch(/^21 резервная копия/)
+    expect(translateCount('ru', 'quit.message', 3)).toMatch(/^3 резервные копии/)
+    expect(translateCount('ru', 'quit.message', 5)).toMatch(/^5 резервных копий/)
+    expect(translateCount('pl', 'quit.message', 12)).toMatch(/^12 kopii zapasowych/)
+    expect(translateCount('ja', 'quit.message', 1)).toBe('1 件のバックアップが実行中または待機中です。')
   })
 })
 

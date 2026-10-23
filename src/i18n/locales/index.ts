@@ -1,3 +1,4 @@
+import { LANGUAGES, type Language } from '../../../electron/shared/languages'
 import common from './common'
 import nav from './nav'
 import projects from './projects'
@@ -16,15 +17,12 @@ import tableEditor from './tables'
 import insights from './insights'
 import pgdump from './pgdump'
 
-/** Every feature's messages. Add new files here; both languages are derived from this list. */
+/** Every feature's messages. Add new files here; every language is derived from this list. */
 const all = { common, nav, projects, sql, authUsers, storage, secrets, backups, dashboard, logs, accounts, miniProgress, settings, restore, tableEditor, insights, pgdump }
 
 type All = typeof all
 
-export const en = Object.fromEntries(Object.entries(all).map(([k, v]) => [k, v.en])) as {
-  [K in keyof All]: All[K]['en']
-}
-
-export const ptBR = Object.fromEntries(Object.entries(all).map(([k, v]) => [k, v.ptBR])) as {
-  [K in keyof All]: All[K]['ptBR']
-}
+/** The full message tree of each language, keyed by language code. */
+export const messages = Object.fromEntries(
+  LANGUAGES.map((lang) => [lang, Object.fromEntries(Object.entries(all).map(([feature, catalog]) => [feature, catalog[lang]]))]),
+) as { [L in Language]: { [K in keyof All]: All[K][L] } }

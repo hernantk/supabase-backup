@@ -1,3 +1,3 @@
-import { en } from './locales'
+import { messages } from './locales'
 
-export default en
+export default messages.en
