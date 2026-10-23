@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { HashRouter, Routes, Route, Navigate, useMatch } from 'react-router-dom'
 import { SidebarNav } from './components/SidebarNav'
 import { TitleBar } from './components/TitleBar'
 import { BackupMiniProgress } from './components/BackupMiniProgress'
@@ -28,6 +28,7 @@ import { SecretsKeys } from './pages/project/SecretsKeys'
 
 function Shell() {
   const { data: config } = useConfig()
+  const inProject = !!useMatch('/p/:id/*')
   useManagerChangeSync()
 
   // The language preference lives in the config; "system" follows the OS.
@@ -41,7 +42,8 @@ function Shell() {
         <SidebarNav />
         <div className="flex-1 min-w-0 flex flex-col">
           <TitleBar />
-          <main className="flex-1 min-w-0 overflow-y-auto px-8 pb-10 lg:px-12">
+          {/* A project workspace is full-bleed: it draws its own rail, header and scroll areas. */}
+          <main className={`flex-1 min-w-0 ${inProject ? 'min-h-0 overflow-hidden' : 'overflow-y-auto px-8 pb-10 lg:px-12'}`}>
             <Routes>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<Dashboard />} />

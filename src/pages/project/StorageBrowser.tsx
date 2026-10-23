@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { call, useManagerQuery } from '../../lib/api'
 import { formatBytes, formatRelative } from '../../lib/format'
 import { CenteredSpinner, ConfirmSheet, EmptyState, Notice, Sheet, Spinner, Switch } from '../../components/ui'
-import { Requires, useWorkspaceProject } from './ProjectWorkspace'
+import { Requires, SideItem, SplitView, useWorkspaceProject } from './ProjectWorkspace'
 import type { StorageEntry } from '../../../electron/shared/managerApi'
 
 export function StorageBrowser() {
@@ -77,46 +77,46 @@ function StorageInner() {
   const crumbs = prefix ? prefix.split('/') : []
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[240px_1fr]">
-      {/* Buckets */}
-      <aside className="space-y-2">
-        <div className="flex items-center justify-between px-1">
-          <h2 className="section-title !mb-0">{t('storage.buckets')}</h2>
-          <button className="text-brand-400 hover:text-brand-300" onClick={() => setCreating(true)} aria-label={t('storage.newBucket')}>
-            <Plus size={16} />
-          </button>
-        </div>
-        {buckets.isLoading ? (
-          <CenteredSpinner />
-        ) : buckets.error ? (
-          <Notice tone="error">{buckets.error.message}</Notice>
-        ) : (buckets.data?.length ?? 0) === 0 ? (
-          <p className="px-1 text-[13px] text-surface-500">{t('storage.noBuckets.body')}</p>
-        ) : (
-          <ul className="list-group">
-            {buckets.data!.map((b) => (
-              <li key={b.id}>
-                <button
-                  className={`list-row w-full text-left !min-h-[44px] ${bucket === b.name ? 'bg-brand-500/10' : 'hover:bg-surface-800/50'}`}
-                  onClick={() => openBucket(b.name)}
-                >
-                  {b.public ? <Globe size={14} className="text-surface-400" /> : <Lock size={14} className="text-surface-400" />}
-                  <span className="flex-1 truncate text-[13.5px] text-surface-100">{b.name}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-        {bucket && (
-          <button className="btn-ghost !text-red-400 hover:!bg-red-500/10 w-full" onClick={() => setPendingDelete({ kind: 'bucket', name: bucket })}>
-            <Trash2 size={14} />
-            {t('storage.deleteBucket')}
-          </button>
-        )}
-      </aside>
-
-      {/* Objects */}
-      <section className="space-y-4 min-w-0">
+    <SplitView
+      title={t('projects.tabs.storage')}
+      action={
+        <button className="p-1 rounded-md text-surface-400 hover:text-surface-100 hover:bg-surface-800" onClick={() => setCreating(true)} aria-label={t('storage.newBucket')} title={t('storage.newBucket')}>
+          <Plus size={16} />
+        </button>
+      }
+      side={
+        <>
+          <p className="px-4 pb-1 text-[11.5px] font-semibold text-surface-500">{t('storage.buckets')}</p>
+          {buckets.isLoading ? (
+            <CenteredSpinner />
+          ) : buckets.error ? (
+            <div className="px-3"><Notice tone="error">{buckets.error.message}</Notice></div>
+          ) : (buckets.data?.length ?? 0) === 0 ? (
+            <p className="px-4 text-[13px] text-surface-500">{t('storage.noBuckets.body')}</p>
+          ) : (
+            <ul className="px-2 pb-3 space-y-px">
+              {buckets.data!.map((b) => (
+                <li key={b.id}>
+                  <SideItem active={bucket === b.name} onClick={() => openBucket(b.name)}>
+                    {b.public ? <Globe size={14} className="shrink-0" /> : <Lock size={14} className="shrink-0" />}
+                    <span className="truncate">{b.name}</span>
+                  </SideItem>
+                </li>
+              ))}
+            </ul>
+          )}
+          {bucket && (
+            <div className="px-2 pb-3">
+              <button className="btn-ghost !text-red-400 hover:!bg-red-500/10 w-full !justify-start !px-2 !py-1.5 text-[13px]" onClick={() => setPendingDelete({ kind: 'bucket', name: bucket })}>
+                <Trash2 size={14} />
+                {t('storage.deleteBucket')}
+              </button>
+            </div>
+          )}
+        </>
+      }
+    >
+      <div className="space-y-4">
         {!bucket ? (
           (buckets.data?.length ?? 0) === 0 && !buckets.isLoading ? (
             <EmptyState
@@ -235,7 +235,7 @@ function StorageInner() {
             <p className="px-1 text-[12.5px] text-surface-500">{t('storage.folderNote')}</p>
           </>
         )}
-      </section>
+      </div>
 
       <CreateBucketSheet open={creating} onClose={() => setCreating(false)} onCreated={refreshBuckets} />
 
@@ -274,7 +274,7 @@ function StorageInner() {
         tone="primary"
         onConfirm={() => { upload.mutate() }}
       />
-    </div>
+    </SplitView>
   )
 }
 

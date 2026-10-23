@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Plus, RefreshCw, Table2, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Eye, Plus, RefreshCw, Table2, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { call, useManagerQuery } from '../../lib/api'
 import { cellText } from '../../components/ResultTable'
 import { CenteredSpinner, ConfirmSheet, EmptyState, Notice, Sheet, Spinner } from '../../components/ui'
-import { Requires, useWorkspaceProject } from './ProjectWorkspace'
+import { Requires, SideItem, SplitView, useWorkspaceProject } from './ProjectWorkspace'
 import type { CellValue, ColumnInfo, FilterOp, MutationOutcome, RowFilter, TableInfo } from '../../../electron/shared/managerApi'
 
 const PAGE_SIZE = 50
@@ -33,38 +33,35 @@ function TableEditorInner() {
   }, [tables.data, search])
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[250px_1fr]">
-      <aside className="space-y-2 min-w-0">
-        <input className="input" placeholder={t('tableEditor.searchTables')} value={search} onChange={(e) => setSearch(e.target.value)} />
-        {tables.isLoading ? (
-          <CenteredSpinner />
-        ) : tables.error ? (
-          <Notice tone="error">{tables.error.message}</Notice>
-        ) : filtered.length === 0 ? (
-          <p className="px-1 text-[13px] text-surface-500">{t('tableEditor.noTables.body')}</p>
-        ) : (
-          <ul className="list-group max-h-[560px] overflow-y-auto">
-            {filtered.map((x) => (
-              <li key={`${x.schema}.${x.name}`}>
-                <button
-                  className={`list-row w-full text-left !min-h-[44px] ${selected?.schema === x.schema && selected.name === x.name ? 'bg-brand-500/10' : 'hover:bg-surface-800/50'}`}
-                  onClick={() => setSelected(x)}
-                >
-                  <Table2 size={14} className="text-surface-400 shrink-0" />
-                  <span className="flex-1 min-w-0">
-                    <span className="block text-[13.5px] text-surface-100 truncate">{x.name}</span>
-                    <span className="block text-[11.5px] text-surface-500 truncate">
-                      {x.schema}{x.kind !== 'table' ? ` · ${t('tableEditor.view')}` : ''}
-                    </span>
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </aside>
-
-      <section className="min-w-0">
+    <SplitView
+      title={t('projects.tabs.tables')}
+      side={
+        <>
+          <div className="px-3 pb-2">
+            <input className="input !py-[5px] text-[13px]" placeholder={t('tableEditor.searchTables')} value={search} onChange={(e) => setSearch(e.target.value)} />
+          </div>
+          {tables.isLoading ? (
+            <CenteredSpinner />
+          ) : tables.error ? (
+            <div className="px-3"><Notice tone="error">{tables.error.message}</Notice></div>
+          ) : filtered.length === 0 ? (
+            <p className="px-4 text-[13px] text-surface-500">{t('tableEditor.noTables.body')}</p>
+          ) : (
+            <ul className="px-2 pb-3 space-y-px">
+              {filtered.map((x) => (
+                <li key={`${x.schema}.${x.name}`}>
+                  <SideItem active={selected?.schema === x.schema && selected.name === x.name} onClick={() => setSelected(x)}>
+                    {x.kind === 'table' ? <Table2 size={14} className="shrink-0" /> : <Eye size={14} className="shrink-0" />}
+                    <span className="truncate">{x.name}</span>
+                    {x.schema !== 'public' && <span className="ml-auto text-[11px] text-surface-500 truncate">{x.schema}</span>}
+                  </SideItem>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      }
+    >
         {selected ? (
           <TableGrid key={`${selected.schema}.${selected.name}`} table={selected} />
         ) : (
@@ -74,8 +71,7 @@ function TableEditorInner() {
             body={(tables.data?.length ?? 0) === 0 && !tables.isLoading ? t('tableEditor.noTables.body') : t('tableEditor.pick.body')}
           />
         )}
-      </section>
-    </div>
+    </SplitView>
   )
 }
 
@@ -201,7 +197,7 @@ function TableGrid({ table }: { table: TableInfo }) {
         <CenteredSpinner />
       ) : (
         <>
-          <div className="overflow-auto rounded-xl border border-surface-700/70 bg-surface-900 max-h-[520px]">
+          <div className="overflow-auto rounded-xl border border-surface-700/70 bg-surface-900 max-h-[calc(100vh-290px)]">
             <table className="w-full text-[12.5px] border-separate border-spacing-0">
               <thead className="sticky top-0 z-10">
                 <tr>
