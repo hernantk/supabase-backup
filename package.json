@@ -1,6 +1,6 @@
 {
   "name": "supabase-backup",
-  "version": "2.0.1",
+  "version": "2.1.0",
   "description": "Local Supabase Manager: multiple accounts, parallel and scheduled backups, SQL, Auth, Storage and more",
   "main": "dist-electron/main.js",
   "scripts": {
