@@ -1,4 +1,5 @@
 import type { AppConfig, AppSettings, ConnectionConfig } from '../preload'
+import { LANGUAGES as APP_LANGUAGES } from '../shared/languages'
 
 export const DEFAULT_SETTINGS: AppSettings = {
   maxConcurrentBackups: 2,
@@ -11,7 +12,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
 }
 
 const APPEARANCES: string[] = ['system', 'light', 'dark']
-const LANGUAGES: string[] = ['system', 'en', 'pt-BR']
+const LANGUAGES: string[] = ['system', ...APP_LANGUAGES]
 
 export const MIN_CONCURRENCY = 1
 export const MAX_CONCURRENCY = 16

@@ -4,6 +4,7 @@ import { useConfig, useSaveConfig } from '../../hooks/useConfig'
 import { CenteredSpinner, Section, Segmented, Switch } from '../../components/ui'
 import { Updates } from './Updates'
 import type { AppSettings } from '../../../electron/preload'
+import { LANGUAGES, LANGUAGE_NAMES, type LanguagePreference } from '../../../electron/shared/languages'
 
 export function GeneralSettings() {
   const { t } = useTranslation()
@@ -42,12 +43,19 @@ export function GeneralSettings() {
           </div>
           <div className="list-row justify-between">
             <span className="text-[14px] text-surface-100">{t('settings.general.language')}</span>
-            <Segmented
-              label={t('settings.general.language')}
+            <select
+              className="input !w-auto"
+              aria-label={t('settings.general.language')}
               value={settings.language}
-              onChange={(language) => set({ language })}
-              options={(['system', 'en', 'pt-BR'] as const).map((v) => ({ value: v, label: t(`settings.general.languages.${v}`) }))}
-            />
+              onChange={(e) => set({ language: e.target.value as LanguagePreference })}
+            >
+              <option value="system">{t('settings.general.languages.system')}</option>
+              {LANGUAGES.map((lang) => (
+                <option key={lang} value={lang} lang={lang}>
+                  {LANGUAGE_NAMES[lang]}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
       </Section>

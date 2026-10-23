@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { JobInfo, BatchSummary, QueueEvent } from './core/jobQueue'
 import type { ManagerApi, ManagerMethod } from './shared/managerApi'
+import type { LanguagePreference } from './shared/languages'
 
 export type { JobInfo, BatchSummary, QueueEvent }
 
@@ -68,7 +69,7 @@ export interface AppSettings {
   /** Run a scheduled backup that was missed because the PC was off or asleep. */
   catchUpMissed: boolean
   appearance: 'system' | 'light' | 'dark'
-  language: 'system' | 'en' | 'pt-BR'
+  language: LanguagePreference
   /** Look for a new release when the app starts (never installs without asking). */
   autoUpdate: boolean
 }

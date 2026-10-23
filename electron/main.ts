@@ -15,7 +15,7 @@ import { applyStartWithSystem, HIDDEN_FLAG } from './services/autostart'
 import { checkForUpdates } from './services/updater'
 import { createTray, destroyTray, hasTray, setTrayActivity } from './services/tray'
 import { mainLanguage, setNotificationClickHandler } from './services/notify'
-import { translate } from './core/mainMessages'
+import { translate, translateCount } from './core/mainMessages'
 import { applyAppearance, canvasColor, overlayColors, watchTheme } from './services/appearance'
 
 let mainWindow: BrowserWindow | null = null
@@ -94,7 +94,7 @@ async function requestQuit() {
       buttons: [translate(lang, 'quit.cancelAndQuit'), translate(lang, 'quit.keep')],
       defaultId: 1,
       cancelId: 1,
-      message: translate(lang, active.length === 1 ? 'quit.message.one' : 'quit.message.other', { count: active.length }),
+      message: translateCount(lang, 'quit.message', active.length),
       detail: translate(lang, 'quit.detail'),
     })
     if (response !== 0) return

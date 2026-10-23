@@ -3,7 +3,7 @@
 A local, multi-account **Supabase Manager** for Windows and Linux, with scheduled and parallel backups.
 Everything runs on your computer: no server, no telemetry. Tokens and keys are encrypted with the OS keychain.
 
-Built with **Electron + React + TypeScript + Vite**. Light and dark themes follow the system; the UI is available in English and Brazilian Portuguese.
+Built with **Electron + React + TypeScript + Vite**. Light and dark themes follow the system; the UI is available in 15 languages (English, Portuguese (Brazil and Portugal), Spanish, French, German, Italian, Dutch, Polish, Russian, Turkish, Japanese, Korean, Simplified Chinese and Hindi) and follows the system language by default.
 
 ---
 
@@ -86,7 +86,7 @@ electron/
 src/
   pages/                           Dashboard, Projects, project/* (workspace tabs), Backups, Restore,
                                    Accounts, Settings, Activity
-  components/, hooks/, lib/, i18n/ UI primitives, TanStack Query hooks, typed en + pt-BR messages
+  components/, hooks/, lib/, i18n/ UI primitives, TanStack Query hooks, typed messages in every language
 docs/V2-DESIGN.md                  design decisions
 ```
 
