@@ -9,6 +9,7 @@ import { appendAudit } from '../audit'
 import { adminClient } from '../manager/context'
 import { contentTypeFor, readStorageArchive } from '../../core/storageArchive'
 import type { ConnectionConfig, RestoreOptions, RestoreProgress, RestoreResult } from '../../preload'
+import { pgToolEnv } from '../../core/dbUrl'
 
 const UPLOAD_CONCURRENCY = 4
 
@@ -143,7 +144,7 @@ function runPsql(dbUrl: string, sqlFile: string, onProgress: (p: RestoreProgress
 
     onProgress({ stage: 'database', progress: 25, message: 'Connecting to the database…' })
     const proc = spawn(psqlPath, [dbUrl, '--file', sqlFile, '--set', 'ON_ERROR_STOP=on', '--echo-errors'], {
-      env: { ...process.env },
+      env: pgToolEnv(),
       stdio: ['pipe', 'pipe', 'pipe'],
     })
     const onAbort = () => proc.kill('SIGTERM')

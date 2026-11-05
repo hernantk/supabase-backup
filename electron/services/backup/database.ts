@@ -4,6 +4,7 @@ import fs from 'fs'
 import { getLogger } from '../logger'
 import { detectPgDump } from '../pgDumpInstaller'
 import type { SupabaseConfig } from '../../preload'
+import { pgToolEnv, hostNotFoundMessage } from '../../core/dbUrl'
 
 /** Returns the best available pg_dump binary path, or throws with a helpful message. */
 async function resolvePgDumpPath(): Promise<string> {
@@ -58,7 +59,7 @@ export async function dumpDatabase(
 
     // One process per call: parallel backups must never share a handle.
     const proc: ChildProcess = spawn(pgDumpPath, args, {
-      env: { ...process.env },
+      env: pgToolEnv(),
       stdio: ['pipe', 'pipe', 'pipe'],
     })
 
@@ -93,7 +94,10 @@ export async function dumpDatabase(
         onProgress?.(`Database dump completed (${formatBytes(stats.size)})`)
         resolve(outputFile)
       } else {
-        const error = `pg_dump failed with exit code ${code}: ${stderr}`
+        const hostMissing = /could not translate host name/i.test(stderr)
+        const error = hostMissing
+          ? `pg_dump failed: ${hostNotFoundMessage(config.dbUrl)}`
+          : `pg_dump failed with exit code ${code}: ${stderr}`
         logger.error(error)
         reject(new Error(error))
       }
@@ -137,7 +141,7 @@ export async function testSupabaseConnection(
     const proc = spawn(
       pgDumpPath,
       ['-d', config.dbUrl, '--schema-only', '-t', 'supabase_backup_probe_xyz'],
-      { timeout: 15000, killSignal: 'SIGTERM' }
+      { timeout: 15000, killSignal: 'SIGTERM', env: pgToolEnv() }
     )
 
     let stderr = ''
@@ -174,7 +178,7 @@ export async function testSupabaseConnection(
       if (s.includes('password authentication failed') || s.includes('authentication failed')) {
         resolve({ success: false, message: 'Authentication failed — wrong password. Check the credentials in your Database URL.' })
       } else if (s.includes('could not translate host name') || s.includes('name or service not known') || s.includes('nodename nor servname provided')) {
-        resolve({ success: false, message: 'Host not found. Check the hostname in your Database URL.' })
+        resolve({ success: false, message: hostNotFoundMessage(config.dbUrl) })
       } else if (s.includes('connection refused')) {
         resolve({ success: false, message: 'Connection refused — the server is not accepting connections on that port.' })
       } else if (s.includes('could not connect')) {

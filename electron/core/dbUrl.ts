@@ -48,3 +48,33 @@ export function pickServiceKey(keys: ApiKeyInfo[]): string | undefined {
   if (legacy) return legacy.api_key!
   return withValue.find((k) => k.type === 'secret')?.api_key ?? undefined
 }
+
+/**
+ * Environment for spawning pg_dump/psql. Forces the C locale so their messages come out in plain
+ * English: a localized build otherwise prints in the OS language (e.g. Portuguese) using the console
+ * code page, which arrives garbled in UTF-8 and defeats the English checks that classify errors.
+ */
+export function pgToolEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  return { ...base, LC_ALL: 'C', LC_MESSAGES: 'C', LANGUAGE: 'en' }
+}
+
+/** True when the URL points at Supabase's direct host (`db.<ref>.supabase.co`), which is IPv6-only. */
+export function isSupabaseDirectHost(dbUrl: string): boolean {
+  try {
+    return /^db\.[a-z0-9]+\.supabase\.co$/i.test(new URL(dbUrl).hostname)
+  } catch {
+    return false
+  }
+}
+
+/** Message for a DNS lookup failure, pointing at the session pooler when the direct host is the cause. */
+export function hostNotFoundMessage(dbUrl: string): string {
+  if (isSupabaseDirectHost(dbUrl)) {
+    return (
+      'Could not reach the direct database host: it only has an IPv6 address and this network has no IPv6. ' +
+      'Use the Session pooler connection string instead (Supabase dashboard → Connect → Session pooler), ' +
+      'or link the account in Accounts and set the database password there to fill it in automatically.'
+    )
+  }
+  return 'Host not found. Check the hostname in your Database URL.'
+}
