@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, powerMonitor, shell } from 'electron'
+import { app, BrowserWindow, crashReporter, dialog, powerMonitor, shell } from 'electron'
 import path from 'path'
 import { setupIpcHandlers } from './ipc'
 import { initLogger } from './services/logger'
@@ -23,6 +23,15 @@ let isQuitting = false
 
 const isDev = !app.isPackaged
 const startHidden = process.argv.includes(HIDDEN_FLAG)
+
+// While Windows shuts down it ends Chromium's GPU process, and relaunching it fails because the
+// desktop is going away. After a few failures Chromium aborts on purpose ("GPU process isn't usable.
+// Goodbye.") and Windows shows an "unknown software exception (0x80000003)" error for the app.
+// Without the crash limit Chromium just keeps retrying until the session ends.
+if (process.platform === 'win32') app.commandLine.appendSwitch('disable-gpu-process-crash-limit')
+
+// Keep native crash dumps locally (userData/Crashpad) so a future crash can be diagnosed. Nothing is uploaded.
+crashReporter.start({ uploadToServer: false })
 
 /** Delay before looking for missed runs, so startup and the first window paint are not slowed down. */
 const CATCH_UP_DELAY_MS = 15_000
@@ -70,6 +79,13 @@ function createWindow() {
     if (isQuitting || !hasTray() || !loadConfig().settings.closeToTray) return
     event.preventDefault()
     mainWindow?.hide()
+  })
+
+  // Windows is logging off or shutting down; 'before-quit' does not fire then. Stop pg_dump & co.
+  // so they do not outlive the app, and let the window close instead of hiding to the tray.
+  mainWindow.on('session-end', () => {
+    isQuitting = true
+    cancelAllBackups()
   })
 
   mainWindow.on('closed', () => {
